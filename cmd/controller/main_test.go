@@ -76,6 +76,7 @@ func Test_parseAndValidateFlags(t *testing.T) {
 		require.Equal(t, "text", f.logFormat)
 		require.False(t, f.extProcEnableRedaction)
 		require.True(t, f.extProcValidateEmbeddingVectors)
+		require.True(t, f.extProcTraceEmbeddingVectors)
 		require.Equal(t, "docker.io/envoyproxy/ai-gateway-extproc:latest", f.extProcImage)
 		require.Equal(t, corev1.PullIfNotPresent, f.extProcImagePullPolicy)
 		require.True(t, f.enableLeaderElection)
@@ -107,6 +108,7 @@ func Test_parseAndValidateFlags(t *testing.T) {
 					tc.dash + "logFormat=json",
 					tc.dash + "extProcEnableRedaction=true",
 					tc.dash + "extProcValidateEmbeddingVectors=false",
+					tc.dash + "extProcTraceEmbeddingVectors=false",
 					tc.dash + "extProcImage=example.com/extproc:latest",
 					tc.dash + "extProcImagePullPolicy=Always",
 					tc.dash + "enableLeaderElection=false",
@@ -134,6 +136,7 @@ func Test_parseAndValidateFlags(t *testing.T) {
 				require.Equal(t, "json", f.logFormat)
 				require.True(t, f.extProcEnableRedaction)
 				require.False(t, f.extProcValidateEmbeddingVectors)
+				require.False(t, f.extProcTraceEmbeddingVectors)
 				require.Equal(t, "example.com/extproc:latest", f.extProcImage)
 				require.Equal(t, corev1.PullAlways, f.extProcImagePullPolicy)
 				require.False(t, f.enableLeaderElection)
