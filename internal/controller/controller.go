@@ -69,6 +69,8 @@ type Options struct {
 	ExtProcEnableRedaction bool
 	// ExtProcValidateEmbeddingVectors enables full OpenAI-compatible embedding response validation.
 	ExtProcValidateEmbeddingVectors bool
+	// ExtProcTraceEmbeddingVectors captures vectors only when validation is disabled.
+	ExtProcTraceEmbeddingVectors bool
 	// ExtProcImage is the image for the external processor set on Deployment.
 	ExtProcImage string
 	// ExtProcImagePullPolicy is the image pull policy for the external processor set on Deployment.
@@ -268,6 +270,7 @@ func StartControllers(ctx context.Context, mgr manager.Manager, config *rest.Con
 			options.ExtProcLogLevel,
 			options.ExtProcEnableRedaction,
 			options.ExtProcValidateEmbeddingVectors,
+			options.ExtProcTraceEmbeddingVectors,
 			options.UDSPath,
 			options.RequestHeaderAttributes,
 			options.TracingRequestHeaderAttributes,

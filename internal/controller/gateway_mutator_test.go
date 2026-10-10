@@ -432,7 +432,7 @@ func newTestGatewayMutator(fakeClient client.Client, fakeKube *fake2.Clientset, 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zap.Options{Development: true, Level: zapcore.DebugLevel})))
 	return newGatewayMutator(
 		fakeClient, fakeClient, fakeKube, ctrl.Log, "docker.io/envoyproxy/ai-gateway-extproc:latest", corev1.PullIfNotPresent,
-		"info", false, true, "/tmp/extproc.sock", requestHeaderAttributes, spanRequestHeaderAttributes, metricsRequestHeaderAttributes, logRequestHeaderAttributes, "/v1", endpointPrefixes, extProcExtraEnvVars, extProcImagePullSecrets, 512*1024*1024,
+		"info", false, true, true, "/tmp/extproc.sock", requestHeaderAttributes, spanRequestHeaderAttributes, metricsRequestHeaderAttributes, logRequestHeaderAttributes, "/v1", endpointPrefixes, extProcExtraEnvVars, extProcImagePullSecrets, 512*1024*1024,
 		sidecar, "seed", 100, "fallback", 200,
 	)
 }
@@ -764,7 +764,7 @@ func TestGatewayMutator_mutatePod_UsesNoCacheReader(t *testing.T) {
 	g := newGatewayMutator(
 		cacheClient, noCacheReader, fakeKube, ctrl.Log,
 		"docker.io/envoyproxy/ai-gateway-extproc:latest", corev1.PullIfNotPresent,
-		"info", false, true, "/tmp/extproc.sock", nil, nil, nil, nil, "/v1", "", "", "", 512*1024*1024,
+		"info", false, true, true, "/tmp/extproc.sock", nil, nil, nil, nil, "/v1", "", "", "", 512*1024*1024,
 		false, "seed", 100, "fallback", 200,
 	)
 
@@ -814,7 +814,7 @@ func TestGatewayMutator_listAIGatewayRoutesForGateway_NoCacheReaderFallback(t *t
 	g := newGatewayMutator(
 		cacheClient, noCacheReader, fakeKube, ctrl.Log,
 		"docker.io/envoyproxy/ai-gateway-extproc:latest", corev1.PullIfNotPresent,
-		"info", false, true, "/tmp/extproc.sock", nil, nil, nil, nil, "/v1", "", "", "", 512*1024*1024,
+		"info", false, true, true, "/tmp/extproc.sock", nil, nil, nil, nil, "/v1", "", "", "", 512*1024*1024,
 		false, "seed", 100, "fallback", 200,
 	)
 
@@ -858,7 +858,7 @@ func TestGatewayMutator_listMCPRoutesForGateway_NoCacheReaderFallback(t *testing
 	g := newGatewayMutator(
 		cacheClient, noCacheReader, fakeKube, ctrl.Log,
 		"docker.io/envoyproxy/ai-gateway-extproc:latest", corev1.PullIfNotPresent,
-		"info", false, true, "/tmp/extproc.sock", nil, nil, nil, nil, "/v1", "", "", "", 512*1024*1024,
+		"info", false, true, true, "/tmp/extproc.sock", nil, nil, nil, nil, "/v1", "", "", "", 512*1024*1024,
 		false, "seed", 100, "fallback", 200,
 	)
 
@@ -907,6 +907,19 @@ func TestGatewayMutatorEmbeddingVectorValidationArgs(t *testing.T) {
 		{false, "-validateEmbeddingVectors=false"},
 	} {
 		g := &gatewayMutator{extProcValidateEmbeddingVectors: tc.enabled}
+		require.Contains(t, g.buildExtProcArgs("/tmp/config.yaml", 1064, false), tc.argument)
+	}
+}
+
+func TestGatewayMutatorEmbeddingTraceVectorArgs(t *testing.T) {
+	for _, tc := range []struct {
+		enabled  bool
+		argument string
+	}{
+		{true, "-traceEmbeddingVectors=true"},
+		{false, "-traceEmbeddingVectors=false"},
+	} {
+		g := &gatewayMutator{extProcTraceEmbeddingVectors: tc.enabled}
 		require.Contains(t, g.buildExtProcArgs("/tmp/config.yaml", 1064, false), tc.argument)
 	}
 }
