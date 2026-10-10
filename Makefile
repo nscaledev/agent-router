@@ -382,6 +382,9 @@ helm-test: helm-package  ## Test the helm chart with a dummy version.
 	@$(GO_TOOL) helm template ${HELM_CHART_PATH} --set global.imagePullSecrets[0].name=testsecret | grep -q "name: testsecret"
 	@$(GO_TOOL) helm template ${HELM_CHART_PATH} --set global.imagePullSecrets[0].name=testsecret | grep -q -- "extProcImagePullSecrets=testsecret"
 
+	@$(GO_TOOL) helm template ${HELM_CHART_PATH} | grep -q -- 'extProcValidateEmbeddingVectors=true'
+	@$(GO_TOOL) helm template ${HELM_CHART_PATH} --set extProc.validateEmbeddingVectors=false | grep -q -- 'extProcValidateEmbeddingVectors=false'
+
 # This pushes the helm chart to the OCI registry, requiring the access to the registry endpoint.
 .PHONY: helm-push
 helm-push: helm-package ## Push envoy ai gateway relevant helm charts to OCI registry

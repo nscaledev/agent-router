@@ -38,26 +38,27 @@ import (
 )
 
 type flags struct {
-	envoyGatewayNamespace          string
-	extProcLogLevel                string
-	extProcEnableRedaction         bool
-	extProcImage                   string
-	extProcImagePullPolicy         corev1.PullPolicy
-	enableLeaderElection           bool
-	logLevel                       zapcore.Level
-	extensionServerPort            string
-	tlsCertDir                     string
-	tlsCertName                    string
-	tlsKeyName                     string
-	caBundleName                   string
-	requestHeaderAttributes        *string
-	spanRequestHeaderAttributes    *string
-	metricsRequestHeaderAttributes *string
-	logRequestHeaderAttributes     *string
-	endpointPrefixes               string
-	rootPrefix                     string
-	extProcExtraEnvVars            string
-	extProcImagePullSecrets        string
+	envoyGatewayNamespace           string
+	extProcLogLevel                 string
+	extProcEnableRedaction          bool
+	extProcValidateEmbeddingVectors bool
+	extProcImage                    string
+	extProcImagePullPolicy          corev1.PullPolicy
+	enableLeaderElection            bool
+	logLevel                        zapcore.Level
+	extensionServerPort             string
+	tlsCertDir                      string
+	tlsCertName                     string
+	tlsKeyName                      string
+	caBundleName                    string
+	requestHeaderAttributes         *string
+	spanRequestHeaderAttributes     *string
+	metricsRequestHeaderAttributes  *string
+	logRequestHeaderAttributes      *string
+	endpointPrefixes                string
+	rootPrefix                      string
+	extProcExtraEnvVars             string
+	extProcImagePullSecrets         string
 	// webhookPort is the port for the mutating webhook server.
 	webhookPort int
 	// extProcMaxRecvMsgSize is the maximum message size in bytes that the gRPC server can receive.
@@ -119,6 +120,8 @@ func parseAndValidateFlags(args []string) (*flags, error) {
 		"info",
 		"The log level for the external processor. One of 'debug', 'info', 'warn', or 'error'.",
 	)
+	extProcValidateEmbeddingVectorsPtr := fs.Bool("extProcValidateEmbeddingVectors", true,
+		"Validate OpenAI-compatible embedding response vectors in extproc. Full decoding increases memory use.")
 	extProcEnableRedactionPtr := fs.Bool(
 		"extProcEnableRedaction",
 		false,
@@ -337,6 +340,7 @@ func parseAndValidateFlags(args []string) (*flags, error) {
 		envoyGatewayNamespace:                  *envoyGatewayNamespace,
 		extProcLogLevel:                        *extProcLogLevelPtr,
 		extProcEnableRedaction:                 *extProcEnableRedactionPtr,
+		extProcValidateEmbeddingVectors:        *extProcValidateEmbeddingVectorsPtr,
 		extProcImage:                           *extProcImagePtr,
 		extProcImagePullPolicy:                 extProcPullPolicy,
 		enableLeaderElection:                   *enableLeaderElectionPtr,
@@ -456,6 +460,7 @@ func main() {
 		ExtProcImagePullPolicy:                 parsedFlags.extProcImagePullPolicy,
 		ExtProcLogLevel:                        parsedFlags.extProcLogLevel,
 		ExtProcEnableRedaction:                 parsedFlags.extProcEnableRedaction,
+		ExtProcValidateEmbeddingVectors:        parsedFlags.extProcValidateEmbeddingVectors,
 		EnableLeaderElection:                   parsedFlags.enableLeaderElection,
 		UDSPath:                                extProcUDSPath,
 		RequestHeaderAttributes:                parsedFlags.requestHeaderAttributes,
