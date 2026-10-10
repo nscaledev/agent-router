@@ -301,3 +301,51 @@ backends:
 		require.NoError(t, err, "extproc exited with error before startup message")
 	}
 }
+
+func TestEmbeddingVectorValidationFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		args      []string
+		want      bool
+		wantError bool
+	}{
+		{name: "default", want: true},
+		{name: "enabled", args: []string{"-validateEmbeddingVectors=true"}, want: true},
+		{name: "disabled", args: []string{"-validateEmbeddingVectors=false"}},
+		{name: "invalid", args: []string{"-validateEmbeddingVectors=invalid"}, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags, err := parseAndValidateFlags(append([]string{"-configPath", "/tmp/config.yaml"}, tc.args...))
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, flags.validateEmbeddingVectors)
+		})
+	}
+}
+
+func TestEmbeddingTraceVectorFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		args      []string
+		want      bool
+		wantError bool
+	}{
+		{name: "default", want: true},
+		{name: "enabled", args: []string{"-traceEmbeddingVectors=true"}, want: true},
+		{name: "disabled", args: []string{"-traceEmbeddingVectors=false"}},
+		{name: "invalid", args: []string{"-traceEmbeddingVectors=invalid"}, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags, err := parseAndValidateFlags(append([]string{"-configPath", "/tmp/config.yaml"}, tc.args...))
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, flags.traceEmbeddingVectors)
+		})
+	}
+}

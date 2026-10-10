@@ -98,7 +98,13 @@ type (
 	// CompletionsEndpointSpec implements EndpointSpec for /v1/completions.
 	CompletionsEndpointSpec struct{}
 	// EmbeddingsEndpointSpec implements EndpointSpec for /v1/embeddings.
-	EmbeddingsEndpointSpec struct{}
+	EmbeddingsEndpointSpec struct {
+		// ValidateEmbeddingVectors defaults to true when unset. Disabling it
+		// reduces memory use for OpenAI-compatible response passthrough.
+		ValidateEmbeddingVectors *bool
+		// TraceEmbeddingVectors defaults to true and only applies when validation is disabled.
+		TraceEmbeddingVectors *bool
+	}
 	// ImageGenerationEndpointSpec implements EndpointSpec for /v1/images/generations.
 	ImageGenerationEndpointSpec struct{}
 	// ResponsesEndpointSpec implements EndpointSpec for /v1/responses.
@@ -248,12 +254,12 @@ func (EmbeddingsEndpointSpec) ParseMultipartBody([]byte, string, bool) (internal
 }
 
 // GetTranslator implements [EndpointSpec.GetTranslator].
-func (EmbeddingsEndpointSpec) GetTranslator(schema filterapi.VersionedAPISchema, modelNameOverride string) (translator.OpenAIEmbeddingTranslator, error) {
+func (e EmbeddingsEndpointSpec) GetTranslator(schema filterapi.VersionedAPISchema, modelNameOverride string) (translator.OpenAIEmbeddingTranslator, error) {
 	switch schema.Name {
 	case filterapi.APISchemaOpenAI:
-		return translator.NewEmbeddingOpenAIToOpenAITranslator(schema.OpenAIPrefix(), modelNameOverride), nil
+		return translator.NewEmbeddingOpenAIToOpenAITranslator(schema.OpenAIPrefix(), modelNameOverride, e.ValidateEmbeddingVectors == nil || *e.ValidateEmbeddingVectors, e.TraceEmbeddingVectors == nil || *e.TraceEmbeddingVectors), nil
 	case filterapi.APISchemaAzureOpenAI:
-		return translator.NewEmbeddingOpenAIToAzureOpenAITranslator(schema.Version, modelNameOverride), nil
+		return translator.NewEmbeddingOpenAIToAzureOpenAITranslator(schema.Version, modelNameOverride, e.ValidateEmbeddingVectors == nil || *e.ValidateEmbeddingVectors, e.TraceEmbeddingVectors == nil || *e.TraceEmbeddingVectors), nil
 	case filterapi.APISchemaGCPVertexAI:
 		return translator.NewEmbeddingOpenAIToGCPVertexAITranslator("", modelNameOverride), nil
 	case filterapi.APISchemaAWSBedrock:

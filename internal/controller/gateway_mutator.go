@@ -39,20 +39,22 @@ type gatewayMutator struct {
 	kube          kubernetes.Interface
 	logger        logr.Logger
 
-	extProcImage                   string
-	extProcImagePullPolicy         corev1.PullPolicy
-	extProcLogLevel                string
-	extProcEnableRedaction         bool
-	udsPath                        string
-	requestHeaderAttributes        *string
-	spanRequestHeaderAttributes    *string
-	metricsRequestHeaderAttributes *string
-	logRequestHeaderAttributes     *string
-	rootPrefix                     string
-	endpointPrefixes               string
-	extProcExtraEnvVars            []corev1.EnvVar
-	extProcImagePullSecrets        []corev1.LocalObjectReference
-	extProcMaxRecvMsgSize          int
+	extProcImage                    string
+	extProcImagePullPolicy          corev1.PullPolicy
+	extProcLogLevel                 string
+	extProcEnableRedaction          bool
+	extProcValidateEmbeddingVectors bool
+	extProcTraceEmbeddingVectors    bool
+	udsPath                         string
+	requestHeaderAttributes         *string
+	spanRequestHeaderAttributes     *string
+	metricsRequestHeaderAttributes  *string
+	logRequestHeaderAttributes      *string
+	rootPrefix                      string
+	endpointPrefixes                string
+	extProcExtraEnvVars             []corev1.EnvVar
+	extProcImagePullSecrets         []corev1.LocalObjectReference
+	extProcMaxRecvMsgSize           int
 
 	// mcpSessionEncryptionSeed is the seed used to derive the encryption key for MCP session data.
 	mcpSessionEncryptionSeed string
@@ -69,7 +71,7 @@ type gatewayMutator struct {
 }
 
 func newGatewayMutator(c client.Client, noCacheReader client.Reader, kube kubernetes.Interface, logger logr.Logger,
-	extProcImage string, extProcImagePullPolicy corev1.PullPolicy, extProcLogLevel string, extProcEnableRedaction bool,
+	extProcImage string, extProcImagePullPolicy corev1.PullPolicy, extProcLogLevel string, extProcEnableRedaction, extProcValidateEmbeddingVectors, extProcTraceEmbeddingVectors bool,
 	udsPath string, requestHeaderAttributes, spanRequestHeaderAttributes, metricsRequestHeaderAttributes, logRequestHeaderAttributes *string, rootPrefix, endpointPrefixes, extProcExtraEnvVars, extProcImagePullSecrets string, extProcMaxRecvMsgSize int,
 	extProcAsSideCar bool,
 	mcpSessionEncryptionSeed string, mcpSessionEncryptionIterations int, mcpFallbackSessionEncryptionSeed string, mcpFallbackSessionEncryptionIterations int,
@@ -102,6 +104,8 @@ func newGatewayMutator(c client.Client, noCacheReader client.Reader, kube kubern
 		extProcImagePullPolicy:                 extProcImagePullPolicy,
 		extProcLogLevel:                        extProcLogLevel,
 		extProcEnableRedaction:                 extProcEnableRedaction,
+		extProcValidateEmbeddingVectors:        extProcValidateEmbeddingVectors,
+		extProcTraceEmbeddingVectors:           extProcTraceEmbeddingVectors,
 		logger:                                 logger,
 		udsPath:                                udsPath,
 		requestHeaderAttributes:                requestHeaderAttributes,
@@ -183,6 +187,11 @@ func (g *gatewayMutator) buildExtProcArgs(filterConfigFullPath string, extProcAd
 	if g.endpointPrefixes != "" {
 		args = append(args, "-endpointPrefixes", g.endpointPrefixes)
 	}
+
+	args = append(args,
+		"-validateEmbeddingVectors="+strconv.FormatBool(g.extProcValidateEmbeddingVectors),
+		"-traceEmbeddingVectors="+strconv.FormatBool(g.extProcTraceEmbeddingVectors),
+	)
 
 	if g.extProcEnableRedaction {
 		args = append(args, "-enableRedaction")
