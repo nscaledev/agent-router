@@ -1,0 +1,57 @@
+# Nscale fork only: keeps upstream-main an exact mirror of upstream's main branch, so the fork can merge
+# upstream into its own main by PR and base upstreamable fixes on a clean upstream tree.
+name: Sync upstream-main
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Fast-forward upstream-main
+    if: github.repository == 'nscaledev/envoy-ai-gateway'
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_URL: https://github.com/theagentrouter/agent-router.git
+    steps:
+      # GITHUB_TOKEN cannot push commits that change .github/workflows, and upstream commits regularly do,
+      # so the push uses a token with Contents and Workflows write access to this repository.
+      - name: Check sync token
+        env:
+          UPSTREAM_SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+        run: |
+          if [ -z "$UPSTREAM_SYNC_TOKEN" ]; then
+            echo "::error::Set the UPSTREAM_SYNC_TOKEN secret to a token with Contents and Workflows write access to ${GITHUB_REPOSITORY}."
+            exit 1
+          fi
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
+        with:
+          ref: upstream-main
+          fetch-depth: 0
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+
+      # Only ever fast-forward: upstream-main carries no fork commits, so divergence means something
+      # was pushed to it by mistake and needs a human to look.
+      - name: Fast-forward to upstream main
+        run: |
+          git fetch "$UPSTREAM_URL" main
+          upstream_sha="$(git rev-parse FETCH_HEAD)"
+          if git merge-base --is-ancestor "$upstream_sha" HEAD; then
+            echo "upstream-main is already at upstream main ($(git rev-parse --short HEAD))."
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor HEAD "$upstream_sha"; then
+            echo "::error::upstream-main has commits that are not on upstream main, so it cannot be fast-forwarded. It must only mirror upstream."
+            exit 1
+          fi
+          echo "Fast-forwarding upstream-main $(git rev-parse --short HEAD)..${upstream_sha:0:7} ($(git rev-list --count "HEAD..$upstream_sha") commits)."
+          git push origin "$upstream_sha:refs/heads/upstream-main"
