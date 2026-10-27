@@ -51,20 +51,21 @@ var LogRequestHeaderAttributes map[string]string
 // Parameters:
 // * f: Metrics factory for creating metrics instances.
 // * tracer: Request tracer for tracing requests and responses.
-// * parseBody: Function to parse the request body.
-// * selectTranslator: Function to select the appropriate translator based on the output schema.
+// * endpointSpec: Endpoint parsing and translator selection, including endpoint options.
 //
 // Returns:
 // * ProcessorFactory: A factory function to create processors based on the configuration.
 func NewFactory[ReqT any, RespT any, RespChunkT any, EndpointSpecT endpointspec.Spec[ReqT, RespT, RespChunkT]](
 	f metrics.Factory,
 	tracer tracingapi.RequestTracer[ReqT, RespT, RespChunkT],
-	_ EndpointSpecT, // This is a type marker to bind EndpointSpecT without specifying ReqT, RespT, RespChunkT explicitly.
+	endpointSpec EndpointSpecT,
 ) ProcessorFactory {
 	return func(config *filterapi.RuntimeConfig, requestHeaders map[string]string, logger *slog.Logger, isUpstreamFilter bool, enableRedaction bool) (Processor, error) {
 		logger = logger.With("isUpstreamFilter", fmt.Sprintf("%v", isUpstreamFilter))
 		if !isUpstreamFilter {
-			return newRouterProcessor[ReqT, RespT, RespChunkT, EndpointSpecT](config, requestHeaders, logger, tracer, enableRedaction), nil
+			processor := newRouterProcessor[ReqT, RespT, RespChunkT, EndpointSpecT](config, requestHeaders, logger, tracer, enableRedaction)
+			processor.eh = endpointSpec
+			return processor, nil
 		}
 		return newUpstreamProcessor[ReqT, RespT, RespChunkT, EndpointSpecT](requestHeaders, f.NewMetrics(), logger), nil
 	}
@@ -191,11 +192,27 @@ func (r *routerProcessor[ReqT, RespT, RespChunkT, EndpointSpecT]) ProcessRespons
 	return
 }
 
+type userFacingError struct {
+	Type  string                `json:"type"`
+	Error userFacingErrorDetail `json:"error"`
+}
+
+type userFacingErrorDetail struct {
+	Type    string `json:"type"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 // formatUserFacingErrorJSON formats a user-facing error as a JSON response body.
 // Returns JSON in format: {"type":"error","error":{"type":"<errorType>","code":"<statusCode>","message":"<message>"}}
 func formatUserFacingErrorJSON(errorType string, statusCode int, message string) []byte {
-	return fmt.Appendf(nil, `{"type":"error","error":{"type":"%s","code":"%d","message":"%s"}}`,
-		errorType, statusCode, message)
+	body, _ := json.Marshal(userFacingError{
+		Type: "error",
+		Error: userFacingErrorDetail{
+			Type: errorType, Code: strconv.Itoa(statusCode), Message: message,
+		},
+	}) // Marshaling these string-only fields cannot fail.
+	return body
 }
 
 // respondLocally answers the request from the gateway itself instead of dispatching it upstream.

@@ -2599,3 +2599,81 @@ func mustCompileCEL(t *testing.T, expr string) cel.Program {
 	require.NoError(t, err)
 	return prog
 }
+
+func TestFormatUserFacingErrorJSON(t *testing.T) {
+	for _, message := range []string{
+		"invalid request",
+		`malformed request: failed to parse JSON: "Syntax error"`,
+		"quoted \"model\"\nnewline\ttab\rreturn\x00nul\\backslash",
+		"Unicode: 日本語",
+		"",
+	} {
+		t.Run(message, func(t *testing.T) {
+			body := formatUserFacingErrorJSON("BadRequest", 400, message)
+			var result userFacingError
+			require.NoError(t, json.Unmarshal(body, &result))
+			require.Equal(t, "error", result.Type)
+			require.Equal(t, "BadRequest", result.Error.Type)
+			require.Equal(t, "400", result.Error.Code)
+			require.Equal(t, message, result.Error.Message)
+		})
+	}
+}
+
+func TestNewFactoryPreservesEmbeddingValidationOption(t *testing.T) {
+	for _, validate := range []bool{true, false} {
+		t.Run(fmt.Sprint(validate), func(t *testing.T) {
+			factory := NewFactory(nil, tracingapi.NoopEmbeddingsTracer{}, endpointspec.EmbeddingsEndpointSpec{ValidateEmbeddingVectors: &validate})
+			processor, err := factory(&filterapi.RuntimeConfig{}, nil, slog.Default(), false, false)
+			require.NoError(t, err)
+			router := processor.(*routerProcessor[openai.EmbeddingRequest, openai.EmbeddingResponse, struct{}, endpointspec.EmbeddingsEndpointSpec])
+			tr, err := router.eh.GetTranslator(filterapi.VersionedAPISchema{Name: filterapi.APISchemaOpenAI}, "")
+			require.NoError(t, err)
+			_, _, _, _, err = tr.ResponseBody(nil, bytes.NewBufferString(`{"data":[{"embedding":{"invalid":true}}],"model":"m"}`), true, nil)
+			if validate {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestNewFactoryPreservesEmbeddingTraceOption(t *testing.T) {
+	validate := false
+	for _, capture := range []bool{true, false} {
+		t.Run(fmt.Sprint(capture), func(t *testing.T) {
+			factory := NewFactory(nil, tracingapi.NoopEmbeddingsTracer{}, endpointspec.EmbeddingsEndpointSpec{ValidateEmbeddingVectors: &validate, TraceEmbeddingVectors: &capture})
+			processor, err := factory(&filterapi.RuntimeConfig{}, nil, slog.Default(), false, false)
+			require.NoError(t, err)
+			router := processor.(*routerProcessor[openai.EmbeddingRequest, openai.EmbeddingResponse, struct{}, endpointspec.EmbeddingsEndpointSpec])
+			for _, schema := range []filterapi.APISchemaName{filterapi.APISchemaOpenAI, filterapi.APISchemaAzureOpenAI} {
+				tr, err := router.eh.GetTranslator(filterapi.VersionedAPISchema{Name: schema}, "")
+				require.NoError(t, err)
+				span := &embeddingTraceOptionSpan{}
+				_, body, usage, model, err := tr.ResponseBody(nil, bytes.NewBufferString(`{"data":[{"embedding":[1,2]}],"model":"m","usage":{"prompt_tokens":7,"total_tokens":9}}`), true, span)
+				require.NoError(t, err)
+				require.Nil(t, body)
+				require.Equal(t, "m", model)
+				require.Equal(t, "m", span.response.Model)
+				input, _ := usage.InputTokens()
+				require.EqualValues(t, 7, input)
+				require.Equal(t, 7, span.response.Usage.PromptTokens)
+				if capture {
+					require.Len(t, span.response.Data, 1)
+				} else {
+					require.Empty(t, span.response.Data)
+				}
+			}
+		})
+	}
+}
+
+type embeddingTraceOptionSpan struct {
+	tracingapi.EmbeddingsSpan
+	response *openai.EmbeddingResponse
+}
+
+func (s *embeddingTraceOptionSpan) RecordResponse(response *openai.EmbeddingResponse) {
+	s.response = response
+}

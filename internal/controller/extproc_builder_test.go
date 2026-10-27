@@ -30,6 +30,8 @@ func newTestBuilder() *extProcBuilder {
 	opts := &Options{
 		ExtProcImage:                           "docker.io/envoyproxy/ai-gateway-extproc:latest",
 		ExtProcLogLevel:                        "info",
+		ExtProcValidateEmbeddingVectors:        true,
+		ExtProcTraceEmbeddingVectors:           true,
 		UDSPath:                                "/tmp/extproc.sock",
 		RootPrefix:                             "/v1",
 		ExtProcMaxRecvMsgSize:                  512 * 1024 * 1024,
@@ -81,7 +83,7 @@ func TestExtProcContainerHash_Drift(t *testing.T) {
 	input := extProcContainerInput{}
 	baseHash := base.extProcContainerHash(input)
 	require.NotEmpty(t, baseHash)
-	require.Equal(t, 20, reflect.TypeOf(extProcBuilder{}).NumField(),
+	require.Equal(t, 22, reflect.TypeOf(extProcBuilder{}).NumField(),
 		"update drift coverage when extProcBuilder fields change")
 
 	// Helper: mutate a copy of the builder, recompute, expect a different hash.
@@ -116,6 +118,16 @@ func TestExtProcContainerHash_Drift(t *testing.T) {
 	assertDrifts("endpointPrefixes", func() *extProcBuilder {
 		b := newTestBuilder()
 		b.endpointPrefixes = "openai:/,cohere:/cohere"
+		return b
+	}())
+	assertDrifts("validateEmbeddingVectors", func() *extProcBuilder {
+		b := newTestBuilder()
+		b.validateEmbeddingVectors = false
+		return b
+	}())
+	assertDrifts("traceEmbeddingVectors", func() *extProcBuilder {
+		b := newTestBuilder()
+		b.traceEmbeddingVectors = false
 		return b
 	}())
 	assertDrifts("enableRedaction", func() *extProcBuilder {
@@ -276,6 +288,33 @@ func TestBuildExtProcBaseArgs_LogFormat(t *testing.T) {
 		b.logFormat = internalapi.LogFormatJSON
 		args := b.buildExtProcBaseArgs(false)
 		require.Equal(t, []string{"-logFormat", internalapi.LogFormatJSON}, args[len(args)-2:])
+	})
+}
+
+// TestBuildExtProcBaseArgs_EmbeddingVectors asserts that -validateEmbeddingVectors and
+// -traceEmbeddingVectors reach the extproc container only when turned off, so existing deployments
+// keep the args and config hash they already have.
+func TestBuildExtProcBaseArgs_EmbeddingVectors(t *testing.T) {
+	t.Run("not passed when enabled", func(t *testing.T) {
+		for _, arg := range newTestBuilder().buildExtProcBaseArgs(false) {
+			require.NotContains(t, arg, "EmbeddingVectors")
+		}
+	})
+
+	t.Run("validation passed when disabled", func(t *testing.T) {
+		b := newTestBuilder()
+		b.validateEmbeddingVectors = false
+		args := b.buildExtProcBaseArgs(false)
+		require.Contains(t, args, "-validateEmbeddingVectors=false")
+		require.NotContains(t, args, "-traceEmbeddingVectors=false")
+	})
+
+	t.Run("trace vectors passed when disabled", func(t *testing.T) {
+		b := newTestBuilder()
+		b.traceEmbeddingVectors = false
+		args := b.buildExtProcBaseArgs(false)
+		require.Contains(t, args, "-traceEmbeddingVectors=false")
+		require.NotContains(t, args, "-validateEmbeddingVectors=false")
 	})
 }
 
