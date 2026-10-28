@@ -1,0 +1,37 @@
+name: Alfred PR Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  alfred-review:
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: nscaledev/actions/review/alfred@d606220707c81e4908bca2b0d24bc6f528b1e565 # main
+        with:
+          alfred-secret: ${{ secrets.ALFRED_SECRET }}
+          alfred-url: ${{ vars.ALFRED_URL }}
+          review-options: >-
+            {
+              "review_autofix_min_confidence": null,
+              "resolve_conflicts": false,
+              "review_approval_policy": {
+                "rules": [
+                  {
+                    "risk_level": "LOW",
+                    "allowed_verdicts": ["APPROVE"]
+                  },
+                  {
+                    "risk_level": "MEDIUM",
+                    "allowed_verdicts": ["APPROVE"],
+                    "max_churned_lines": 100,
+                    "max_changed_files": 3
+                  }
+                ]
+              }
+            }
