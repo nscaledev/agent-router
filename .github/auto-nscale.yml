@@ -1,0 +1,14 @@
+---
+alfred:
+  enabled: true
+  review_options:
+    review_autofix_min_confidence: null
+    resolve_conflicts: false
+    review_approval_policy:
+      rules:
+        LOW:
+          allowed_verdicts: [APPROVE]
+        MEDIUM:
+          allowed_verdicts: [APPROVE]
+          max_churned_lines: 100
+          max_changed_files: 3
