@@ -132,3 +132,9 @@ make sure that these automated checks pass after you open a PR by following the 
   edit the pull request title and description to ensure that it remains descriptive as a
   commit message. Alternatively, maintainers may change the commit message directly at the time of merge.
 - If you have any questions during the review, please feel free to ask the maintainers listed in [MAINTAINERS.md](./MAINTAINERS.md).
+
+### Reviewer environment self-check
+
+Automated reviewers must run the environment self-check documented in
+[docs/reviewer-self-check.md](./docs/reviewer-self-check.md) before posting a
+verdict, and record the result in the review summary as described there.
