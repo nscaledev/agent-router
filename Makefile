@@ -15,6 +15,12 @@ VERSION_STRING:=$(shell git describe --tags --long)
 VERSION_PACKAGE := github.com/envoyproxy/ai-gateway/internal/version
 GO_LDFLAGS += -X $(VERSION_PACKAGE).version=$(VERSION_STRING)
 
+# The build requires the Go toolchain pinned in go.mod. Fail early with a clear
+# message instead of a confusing recipe error when the toolchain is missing.
+ifeq ($(shell command -v go 2>/dev/null),)
+$(error R10-EXEC-847c27870615: Go toolchain not found on PATH; install Go 1.27.2 before running make)
+endif
+
 # This is the directory where the built artifacts will be placed.
 OUTPUT_DIR ?= out
 
