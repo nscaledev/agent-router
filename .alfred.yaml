@@ -1,0 +1,11 @@
+# Copyright Envoy AI Gateway Authors
+# SPDX-License-Identifier: Apache-2.0
+# The full text of the Apache license is available in the LICENSE file at
+# the root of the repo.
+
+version: 1
+repo:
+  github: nscaledev/agent-router
+  description: "Manages Unified Access to Generative AI Services built on Envoy Gateway"
+pull_requests:
+  resolve_conflicts: true
