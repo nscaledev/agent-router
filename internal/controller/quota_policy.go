@@ -76,17 +76,21 @@ func (c *QuotaPolicyController) Reconcile(ctx context.Context, req reconcile.Req
 	}
 	c.logger.Info("Reconciling QuotaPolicy", "namespace", req.Namespace, "name", req.Name)
 
-	if handleFinalizer(ctx, c.client, c.logger, &quotaPolicy, func(ctx context.Context, o *aigv1a1.QuotaPolicy) error {
+	onDelete, err := handleFinalizer(ctx, c.client, c.logger, &quotaPolicy, func(ctx context.Context, o *aigv1a1.QuotaPolicy) error {
 		// Notify the AIGatewayRoutes targeting this policy's backends so their derived HTTPRoutes are
 		// re-reconciled (re-stamping the quota-policy-hash annotation) and Envoy Gateway re-translates
 		// without the deleted policy.
 		c.notifyAIGatewayRoutes(ctx, o)
 		return c.deleteQuotaPolicyConfig(ctx, req.NamespacedName)
-	}) {
+	})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if onDelete {
 		return ctrl.Result{}, nil
 	}
 
-	if err := c.syncQuotaPolicy(ctx, &quotaPolicy); err != nil {
+	if err = c.syncQuotaPolicy(ctx, &quotaPolicy); err != nil {
 		c.logger.Error(err, "failed to sync QuotaPolicy")
 		c.updateQuotaPolicyStatus(ctx, &quotaPolicy, aigv1a1.ConditionTypeNotAccepted, err.Error())
 		return ctrl.Result{}, err
