@@ -17,7 +17,7 @@ concurrency:
 jobs:
   sync:
     name: Fast-forward upstream-main
-    if: github.repository == 'nscaledev/envoy-ai-gateway'
+    if: github.repository == 'nscaledev/agent-router'
     runs-on: ubuntu-latest
     env:
       UPSTREAM_URL: https://github.com/theagentrouter/agent-router.git
