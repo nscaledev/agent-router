@@ -44,3 +44,36 @@ updates:
       - dependency-name: "sigs.k8s.io/gateway-api"
       # Usually, this requires manual changes to the codebase.
       - dependency-name: "sigs.k8s.io/gateway-api-inference-extension"
+
+  # The Nscale release branch. Dependabot reads this file only from the default branch, so the release branch's
+  # updates are configured here with target-branch. Rename the branch below when a new release branch is cut.
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: release/v1.2.1-nscale
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directories:
+      - "/"
+    target-branch: release/v1.2.1-nscale
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      go:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "github.com/envoyproxy/gateway"
+      # Gateway API must match the one used in EG as well as GAIE's to properly run the conformance tests.
+      - dependency-name: "sigs.k8s.io/gateway-api"
+      # Usually, this requires manual changes to the codebase.
+      - dependency-name: "sigs.k8s.io/gateway-api-inference-extension"
