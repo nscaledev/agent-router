@@ -30,6 +30,7 @@ upstream release/v1.2 (v1.2.1-rc2, 45ccd9fe)
   + upstream main-only fixes     8 commits, from upstream main
   + embedding passthrough fixes  9 commits, the fork's own
   + release tag format           1 commit
+  + fixes after rc2-nscale.1     6 commits, from upstream main and the fork's main
 ```
 
 
@@ -200,6 +201,40 @@ rolled on upgrade. The full description is in `site/docs/capabilities/gateway-co
 `nscale/v1.2.1-rc2-nscale.1`.
 
 
+6. Fixes added after v1.2.1-rc2-nscale.1
+---------------------------------------
+
+Security and bug fixes merged to upstream `main` after this branch was first built, plus the fork's own
+dependency bumps. Each upstream commit applied cleanly except `62c65a3b` (see below).
+
+- `0ad67c4f`, from `9239c9e5`: bump `github.com/andybalholm/brotli` to v1.2.7.
+  Why: v1.2.7 has the decoder fix for CVE-2026-111497. The extproc decodes brotli response bodies.
+
+- `7333e600`, from `f954c0ab`: bump modules to clear govulncheck and Trivy findings.
+  Why: govulncheck reported eleven reachable vulnerabilities in `golang.org/x/net`, `golang.org/x/crypto`,
+  the OpenTelemetry log SDK and exporter, `github.com/moby/go-archive` and `github.com/klauspost/compress`, and
+  Trivy flagged a high-severity one in `github.com/go-jose/go-jose/v4`. These are also the findings the
+  fork's Wiz and Dependabot PRs raised against `go.mod`.
+
+- `9b43eb4a`, from `a0b874dc`: redact request bodies for `/v1/responses/input_tokens`,
+  `/v1/messages/count_tokens` and `/tokenize` `chat_template_kwargs`.
+  Why: the tokenization endpoints were added without body redaction, so debug logs could contain prompts.
+
+- `9b51ab18`, from `9581f129`: keep the GCP ADC token source alive across config reloads.
+  Why: with `external_account` credentials, every request to a GCP backend failed with `context canceled`
+  after the first config reload, until the extproc restarted.
+
+- `62c65a3b`, from `165733c5`: requeue when a finalizer write fails.
+  Why: a conflicting finalizer update was only logged and the reconcile was not retried. The QuotaPolicy
+  controller hunk conflicted with upstream `main`'s newer status handling, so only the `handleFinalizer`
+  call was changed there; the rest of that function is as on `release/v1.2`.
+
+- `7befe4c5`: bump `github.com/containerd/containerd` to v1.7.36 and `github.com/klauspost/compress` to
+  v1.18.7 in `tools/go.mod`, as on the fork's `main`.
+  Why: CVE-2026-53493 in containerd. `tools/` holds build tooling only, so this keeps scanners clean rather
+  than changing the shipped images.
+
+
 Not included
 ------------
 
@@ -213,6 +248,6 @@ Cutting the next release
 ------------------------
 
 When upstream tags the final v1.2.1, or later v1.2 patches, rebuild the branch on the new upstream `release/v1.2`
-and reapply layers 2 to 5. Drop any layer 3 commit that upstream has backported, and any layer 4 commit that
+and reapply layers 2 to 6. Drop any layer 3 commit that upstream has backported, and any layer 4 commit that
 upstream has merged. Then increment the `-nscale.<n>` number, or reset it to 1 for a new upstream version, and
 update this file.
