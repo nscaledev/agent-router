@@ -251,3 +251,22 @@ When upstream tags the final v1.2.1, or later v1.2 patches, rebuild the branch o
 and reapply layers 2 to 6. Drop any layer 3 commit that upstream has backported, and any layer 4 commit that
 upstream has merged. Then increment the `-nscale.<n>` number, or reset it to 1 for a new upstream version, and
 update this file.
+
+
+When the fork retires
+---------------------
+
+Each layer is temporary, and each has a named replacement upstream:
+
+- Upstream main-only fixes: the first upstream release that contains them, either a v1.2 backport or v1.3.0.
+- Embedding passthrough fixes: upstream merging and releasing the ports on this repository's
+  `fix/error-json-escaping-upstream` and `fix/embedding-passthrough-memory-upstream` branches.
+- Any later fix layer: the upstream release that contains it, as for the main-only fixes.
+- Fork CI and release tag format: nothing. They exist only to publish the other layers.
+
+The fork retires when one upstream release contains every fix layer this branch carries. The base layer then
+installs upstream's charts and images at that release, no further `nscale/v*` tag is cut, and this branch and
+its Harbor artifacts are kept only until no environment pins them.
+
+Until then, each new release of this branch drops the commits upstream has released, as described in "Cutting
+the next release". A branch with only the fork CI and release tag format layers left is the signal to retire it.
