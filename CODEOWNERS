@@ -1,1 +1,3 @@
-* @theagentrouter/agent-router-maintainers
+# The Nscale fork's release branches need a review from Nscale's AI team. Upstream's maintainers team
+# has no access to this repository, so GitHub ignored the entry this file used to carry.
+* @nscaledev/ai
