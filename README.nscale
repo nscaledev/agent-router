@@ -1,18 +1,21 @@
-Nscale release v1.2.1-rc2-nscale.1
-===================================
+Nscale release v1.2.1-nscale.1
+==============================
 
-This branch, `release/v1.2.1-nscale`, is the Nscale build of Agent Router (Envoy AI Gateway) v1.2.1-rc2. It is
+This branch, `release/v1.2.1-nscale`, is the Nscale build of Agent Router (Envoy AI Gateway) v1.2.1. It is
 upstream's v1.2 patch series plus fixes the fork needs that upstream has not released on v1.2 yet.
 
-Release tag: `nscale/v1.2.1-rc2-nscale.1`. Pushing the tag runs `.github/workflows/release.yaml`, which publishes:
+It follows `v1.2.1-rc2-nscale.1`. Upstream tagged the final v1.2.1 on the same commit as v1.2.1-rc2, so the base
+is unchanged; this release adds the fixes in layer 6.
 
-| Artifact          | Location                                                           |
-|-------------------|--------------------------------------------------------------------|
-| Controller image  | `registry.nscale.com/envir/ai-gateway-controller:v1.2.1-rc2-nscale.1` |
-| Extproc image     | `registry.nscale.com/envir/ai-gateway-extproc:v1.2.1-rc2-nscale.1`    |
-| Helm chart        | `oci://registry.nscale.com/helm-charts/ai-gateway-helm`, version `v1.2.1-rc2-nscale.1` |
-| CRDs Helm chart   | `oci://registry.nscale.com/helm-charts/ai-gateway-crds-helm`, version `v1.2.1-rc2-nscale.1` |
-| GitHub release    | Draft release on the tag, with the charts and `aigw` binaries attached |
+Release tag: `nscale/v1.2.1-nscale.1`. Pushing the tag runs `.github/workflows/release.yaml`, which publishes:
+
+| Artifact          | Location                                                                                |
+|-------------------|-----------------------------------------------------------------------------------------|
+| Controller image  | `registry.nscale.com/envir/ai-gateway-controller:v1.2.1-nscale.1`                       |
+| Extproc image     | `registry.nscale.com/envir/ai-gateway-extproc:v1.2.1-nscale.1`                          |
+| Helm chart        | `oci://registry.nscale.com/helm-charts/ai-gateway-helm`, version `v1.2.1-nscale.1`      |
+| CRDs Helm chart   | `oci://registry.nscale.com/helm-charts/ai-gateway-crds-helm`, version `v1.2.1-nscale.1` |
+| GitHub release    | Draft release on the tag, with the charts and `aigw` binaries attached                  |
 
 Images carry the `org.opencontainers.image.revision` label with the commit they were built from. The chart is
 rewritten to point at the Harbor images before it is packaged.
@@ -21,11 +24,11 @@ rewritten to point at the Harbor images before it is packaged.
 How the branch is built
 -----------------------
 
-The branch is four layers. Commit SHAs are on this branch; "from" gives the commit it was cherry-picked from
+The branch is six layers. Commit SHAs are on this branch; "from" gives the commit it was cherry-picked from
 (`git cherry-pick -x` records it in each commit message).
 
 ```
-upstream release/v1.2 (v1.2.1-rc2, 45ccd9fe)
+upstream release/v1.2 (v1.2.1, 45ccd9fe)
   + fork CI                      4 commits, from the fork's main
   + upstream main-only fixes     8 commits, from upstream main
   + embedding passthrough fixes  9 commits, the fork's own
@@ -34,10 +37,11 @@ upstream release/v1.2 (v1.2.1-rc2, 45ccd9fe)
 ```
 
 
-1. Base: upstream v1.2.1-rc2
-----------------------------
+1. Base: upstream v1.2.1
+------------------------
 
-Upstream `release/v1.2` at `45ccd9fe` ("envoy 1.39.6"), tagged `v1.2.1-rc2`. Over v1.2.0 it adds:
+Upstream `release/v1.2` at `45ccd9fe` ("envoy 1.39.6"), tagged `v1.2.1-rc2` and then `v1.2.1`. Over v1.2.0 it
+adds:
 
 - The MCP proxy listens on `127.0.0.1` only. It used to bind every interface, so any pod that could reach port
   9856 could set the headers Envoy sets after enforcing the MCPRoute security policy, and skip that policy.
@@ -247,10 +251,11 @@ changes.
 Cutting the next release
 ------------------------
 
-When upstream tags the final v1.2.1, or later v1.2 patches, rebuild the branch on the new upstream `release/v1.2`
-and reapply layers 2 to 6. Drop any layer 3 commit that upstream has backported, and any layer 4 commit that
-upstream has merged. Then increment the `-nscale.<n>` number, or reset it to 1 for a new upstream version, and
-update this file.
+When upstream tags a later v1.2 patch, rebuild the branch on the new upstream `release/v1.2` and reapply layers
+2 to 6. Drop any layer 3 commit that upstream has backported, and any layer 4 commit that upstream has merged.
+If the new tag is on the commit this branch is already built on, as v1.2.1 was on v1.2.1-rc2, there is nothing
+to rebuild. Then increment the `-nscale.<n>` number, or reset it to 1 for a new upstream version, and update this
+file.
 
 
 When the fork retires
