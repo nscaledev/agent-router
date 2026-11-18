@@ -1493,6 +1493,52 @@ event: message_stop
 data: {"type":"message_stop"}`,
 		},
 		{
+			// Anthropic input_tokens is the UNCACHED input: OpenAI's total prompt_tokens (10) minus cached_tokens (4).
+			name:            "anthropic-openai - /anthropic/v1/messages - non-streaming with cached prompt tokens",
+			backend:         "openai",
+			path:            "/anthropic/v1/messages",
+			method:          http.MethodPost,
+			requestBody:     `{"model":"claude-test","max_tokens":100,"messages":[{"role":"user","content":"Hello"}]}`,
+			expRequestBody:  `{"messages":[{"content":"Hello","role":"user"}],"model":"claude-test","max_completion_tokens":100}`,
+			expPath:         "/v1/chat/completions",
+			responseBody:    `{"id":"chatcmpl-cache","model":"gpt-4o","choices":[{"message":{"content":"Hi!","role":"assistant"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":4}}}`,
+			expStatus:       http.StatusOK,
+			expResponseBody: `{"id":"chatcmpl-cache","type":"message","role":"assistant","content":[{"type":"text","text":"Hi!"}],"model":"gpt-4o","stop_reason":"end_turn","usage":{"cache_creation_input_tokens":0,"cache_read_input_tokens":4,"input_tokens":6,"output_tokens":3}}`,
+		},
+		{
+			// Anthropic input_tokens is the UNCACHED input: OpenAI's total prompt_tokens (10) minus cached_tokens (4).
+			name:           "anthropic-openai - /anthropic/v1/messages - streaming with cached prompt tokens",
+			backend:        "openai",
+			path:           "/anthropic/v1/messages",
+			method:         http.MethodPost,
+			responseType:   "sse",
+			requestBody:    `{"model":"claude-test","max_tokens":100,"messages":[{"role":"user","content":"Say hi"}],"stream":true}`,
+			expRequestBody: `{"messages":[{"content":"Say hi","role":"user"}],"model":"claude-test","max_completion_tokens":100,"stream":true,"stream_options":{"include_usage":true}}`,
+			expPath:        "/v1/chat/completions",
+			responseBody: `{"id":"chatcmpl-stream-cache","model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}],"usage":null}
+{"id":"chatcmpl-stream-cache","model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":null}
+{"id":"chatcmpl-stream-cache","model":"gpt-4o","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":4}}}
+[DONE]`,
+			expStatus: http.StatusOK,
+			expResponseBody: `event: message_start
+data: {"type":"message_start","message":{"id":"chatcmpl-stream-cache","type":"message","role":"assistant","content":[],"model":"gpt-4o","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":6,"cache_read_input_tokens":4,"output_tokens":3}}
+
+event: message_stop
+data: {"type":"message_stop"}`,
+		},
+		{
 			name:           "anthropic-openai - /anthropic/v1/messages - streaming tool call",
 			backend:        "openai",
 			path:           "/anthropic/v1/messages",
