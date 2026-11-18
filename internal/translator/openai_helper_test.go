@@ -646,9 +646,10 @@ func TestOpenAIStreamToAnthropicState_ProcessBuffer_TextStreaming(t *testing.T) 
 	require.JSONEq(t, `{"type":"message_stop"}`, events[6].data)
 }
 
-// TestOpenAIStreamToAnthropicState_ProcessBuffer_CachedTokens is a regression test guarding
-// against double-counting OpenAI's cached_tokens/cache_write_tokens (a breakdown
-// within prompt_tokens) as if they were additive, Anthropic-native cache usage fields.
+// TestOpenAIStreamToAnthropicState_ProcessBuffer_CachedTokens checks, through the Anthropic SDK's own
+// accumulator, that OpenAI's cached_tokens (a breakdown within the TOTAL prompt_tokens) arrives as Anthropic
+// cache_read_input_tokens with input_tokens holding only the UNCACHED remainder, so the cached part is
+// never counted twice. cache_write_tokens is also inside prompt_tokens and is not forwarded.
 func TestOpenAIStreamToAnthropicState_ProcessBuffer_CachedTokens(t *testing.T) {
 	state := &openAIStreamToAnthropicState{
 		activeTools:  make(map[int64]*streamToolCall),
@@ -678,6 +679,9 @@ func TestOpenAIStreamToAnthropicState_ProcessBuffer_CachedTokens(t *testing.T) {
 
 	msg := accumulateAnthropicMessage(t, out)
 
+	assert.Equal(t, int64(promptTokens-cachedTokens), msg.Usage.InputTokens, "Anthropic input_tokens is the uncached input only")
+	assert.Equal(t, int64(cachedTokens), msg.Usage.CacheReadInputTokens)
+	assert.Equal(t, int64(0), msg.Usage.CacheCreationInputTokens)
 	totalReportedInputTokens := msg.Usage.InputTokens + msg.Usage.CacheReadInputTokens + msg.Usage.CacheCreationInputTokens
 	assert.Equal(t, int64(promptTokens), totalReportedInputTokens,
 		"total input tokens must equal the real prompt_tokens, not be inflated by double-counting the cached portion")
@@ -685,8 +689,32 @@ func TestOpenAIStreamToAnthropicState_ProcessBuffer_CachedTokens(t *testing.T) {
 
 	total, ok := state.tokenUsage.InputTokens()
 	require.True(t, ok)
-	assert.LessOrEqual(t, total, uint32(promptTokens),
-		"internal TokenUsage must not inflate the input token count beyond the real prompt size")
+	assert.Equal(t, uint32(promptTokens), total, "internal TokenUsage InputTokens is the total prompt_tokens")
+	cached, ok := state.tokenUsage.CachedInputTokens()
+	require.True(t, ok)
+	assert.Equal(t, uint32(cachedTokens), cached)
+}
+
+// TestOpenAIStreamToAnthropicState_ProcessBuffer_FullyCachedPrompt checks that a fully cached prompt reaches
+// an Anthropic SDK client as input_tokens 0 (the uncached remainder) beside the cached count, rather than the
+// SDK keeping an earlier non-zero input_tokens.
+func TestOpenAIStreamToAnthropicState_ProcessBuffer_FullyCachedPrompt(t *testing.T) {
+	state := &openAIStreamToAnthropicState{
+		activeTools:  make(map[int64]*streamToolCall),
+		requestModel: "claude-3",
+	}
+	state.buffer.WriteString(
+		"data: {\"id\":\"chatcmpl-cache\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hi\"}}],\"model\":\"gpt-4o\"}\n\n" +
+			"data: {\"id\":\"chatcmpl-cache\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"prompt_tokens_details\":{\"cached_tokens\":10}}}\n\n" +
+			"data: [DONE]\n\n")
+
+	var out []byte
+	require.NoError(t, state.processBuffer(&out, true))
+
+	msg := accumulateAnthropicMessage(t, out)
+	assert.Equal(t, int64(0), msg.Usage.InputTokens)
+	assert.Equal(t, int64(10), msg.Usage.CacheReadInputTokens)
+	assert.Equal(t, int64(2), msg.Usage.OutputTokens)
 }
 
 func TestOpenAIStreamToAnthropicState_ProcessBuffer_ToolCallStreaming(t *testing.T) {
