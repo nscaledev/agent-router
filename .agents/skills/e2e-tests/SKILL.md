@@ -105,8 +105,10 @@ this run holds the cluster's e2e lock:
 - **A run killed before its trap ran** leaves the swap and the file behind. The next
   `swap_in_this_build` on that cluster restores from the file before it swaps. It never saves a
   spec while a restore is pending, so the pinned spec is never lost or overwritten.
-- **CRDs applied by a killed run** are recorded in `~/.cache/atlas/agent-router-e2e-<cluster>.crds`.
-  The next swap on that cluster refuses with `infra` until someone runs `atlas down`.
+- **CRDs applied by a killed run** are recorded in `~/.cache/atlas/agent-router-e2e-<cluster>.crds`,
+  with the run and the node's creation time. The next swap on that cluster deletes it
+  (`atlas down`) and ends that run as `infra`, so the run after starts from the pins. A record whose
+  node has since been recreated is stale, and is dropped.
 
 The suite's namespace and release and the image tag derive from the sha, so a replay never meets
 another run's resources.
@@ -130,7 +132,7 @@ Paste the helpers into `run.sh` after sourcing the library. List every library c
 
 ```sh
 e2e_preflight "ship e2e agent-router#<pr>"
-trap 'aigw_cleanup; e2e_cleanup' EXIT # restore the pinned controller before the lease is released
+trap 'aigw_cleanup || true; e2e_cleanup' EXIT # restore the pinned controller before the lease is released
 ```
 
 ```sh
@@ -144,7 +146,9 @@ AIGW_NS=aigateway-system                    # where the base layer installs Envo
 AGW="agw-e2e-ar-${E2E_SHA:0:7}"
 # Kept per cluster, outside the run's own directory, so a killed run's swap is found by the next.
 aigw_saved() { echo "${XDG_CACHE_HOME:-$HOME/.cache}/atlas/agent-router-e2e-$CLUSTER.json"; }
-aigw_crds() { echo "${XDG_CACHE_HOME:-$HOME/.cache}/atlas/agent-router-e2e-$CLUSTER.crds"; } # holds the run's $RUN_DIR
+# Holds "<run dir> <node created>": which run applied its own CRDs, to which incarnation of the cluster.
+aigw_crds() { echo "${XDG_CACHE_HOME:-$HOME/.cache}/atlas/agent-router-e2e-$CLUSTER.crds"; }
+aigw_node() { docker inspect -f '{{.Created}}' "$CLUSTER-control-plane" 2>/dev/null; }
 
 # Builds this checkout's controller and ext_proc images for the node's architecture and loads them
 # into the atlas's kind node. A pull or Docker fault is $INFRA; a compile or build error is the diff's.
@@ -199,10 +203,11 @@ aigw_restore() {
 aigw_cleanup() {
   [[ -n $CLUSTER ]] || return 0
   aigw_restore || true
-  if [[ $(cat "$(aigw_crds)" 2>/dev/null) == "$RUN_DIR" ]]; then
+  if [[ $(cut -d' ' -f1 "$(aigw_crds)" 2>/dev/null) == "$RUN_DIR" ]]; then
     echo "this run applied this checkout's CRDs, which cannot be put back: deleting cluster $CLUSTER"
-    atlas down && rm -f "$(aigw_crds)"
+    atlas down && rm -f "$(aigw_crds)" || echo "could not delete cluster $CLUSTER; the next swap there deletes it" >&2
   fi
+  return 0 # never stop the trap before e2e_cleanup releases the lock and the lease
 }
 
 # Swaps this checkout's images into the base layer's controller (see "Target resolution").
@@ -214,16 +219,24 @@ case_swap_in_this_build() {
   # A killed run's swap, or this case's first attempt: back to the pins first. Never save a spec
   # while a restore is pending, or the swapped one would replace the pinned one.
   aigw_restore || { echo "a saved pinned spec could not be restored; fix it or run atlas down"; return "$INFRA"; }
-  # A killed run's CRDs are still on the cluster, and only deleting it removes them.
-  [[ ! -s $(aigw_crds) || $(cat "$(aigw_crds)") == "$RUN_DIR" ]] ||
-    { echo "a killed run left its own CRDs on cluster $CLUSTER; run atlas down"; return "$INFRA"; }
+  # Another run's CRDs, on this incarnation of the cluster, are still there, and only deleting the
+  # cluster removes them: delete it, so the next run starts from the pins. A marker for an earlier
+  # incarnation is stale, since the cluster was recreated since.
+  if [[ -s $(aigw_crds) ]] && [[ $(cut -d' ' -f1 "$(aigw_crds)") != "$RUN_DIR" ]]; then
+    if [[ $(cut -d' ' -f2- "$(aigw_crds)") == "$(aigw_node)" ]]; then
+      echo "a killed run left its own CRDs on cluster $CLUSTER: deleting it; the next run starts from the pins"
+      atlas down && rm -f "$(aigw_crds)"
+      return "$INFRA"
+    fi
+    rm -f "$(aigw_crds)"
+  fi
   $KUBECTL -n "$AIGW_NS" get deploy ai-gateway-controller -o json >"$saved.tmp" && mv "$saved.tmp" "$saved" || return "$INFRA"
   [[ $(jq -r '.spec.template.spec.containers[0].image' "$saved") != "$IMG"-* ]] ||
     { rm -f "$saved"; echo "the controller already runs an agent-router e2e image and no pinned spec is saved; run atlas down"; return "$INFRA"; }
   jq -e '.spec.template.spec.containers[0].args | any(startswith("--extProcImage="))' "$saved" >/dev/null ||
     { echo "the controller has no --extProcImage argument; it is not the chart this skill knows"; return "$INFRA"; }
   if ! git diff --quiet "${E2E_BASE_SHA:-origin/main}" "$E2E_SHA" -- manifests/charts/ai-gateway-crds-helm api; then
-    echo "$RUN_DIR" >"$(aigw_crds)"
+    echo "$RUN_DIR $(aigw_node)" >"$(aigw_crds)"
     helm template aigw-crds manifests/charts/ai-gateway-crds-helm | $KUBECTL apply --server-side --force-conflicts -f - || return 1
   fi
   $KUBECTL -n "$AIGW_NS" patch deploy ai-gateway-controller --type=json \
