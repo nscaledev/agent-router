@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/tidwall/sjson"
+	"k8s.io/utils/ptr"
 
 	"github.com/envoyproxy/ai-gateway/internal/apischema/anthropic"
 	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
@@ -121,10 +122,19 @@ func (a *anthropicToOpenAIV1ChatCompletionTranslator) responseBodyNonStreaming(b
 
 	responseModel = cmp.Or(openAIResp.Model, a.requestModel)
 
+	// Pass the uncached part and the cached part; the helper sums them, so TokenUsage.InputTokens is the
+	// total prompt_tokens and CachedInputTokens the cached part. Passing prompt_tokens with the cached
+	// count would double-count it. Cached is recorded only when the backend reported the detail, so
+	// metrics are unchanged for backends that do not.
+	input := splitOpenAIPromptTokens(openAIResp.Usage.PromptTokens, openAIResp.Usage.PromptTokensDetails)
+	var cacheReadInputTokens *int64
+	if openAIResp.Usage.PromptTokensDetails != nil {
+		cacheReadInputTokens = ptr.To(int64(input.cacheReadInputTokens))
+	}
 	tokenUsage = metrics.ExtractTokenUsageFromExplicitCaching(
-		int64(openAIResp.Usage.PromptTokens),
+		int64(input.uncachedInputTokens),
 		int64(openAIResp.Usage.CompletionTokens),
-		nil,
+		cacheReadInputTokens,
 		nil,
 	)
 

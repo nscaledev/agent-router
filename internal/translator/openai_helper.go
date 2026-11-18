@@ -424,9 +424,12 @@ func openAIResponseToAnthropic(resp *openai.ChatCompletionResponse, model string
 		stopReason = &sr
 	}
 
+	input := splitOpenAIPromptTokens(resp.Usage.PromptTokens, resp.Usage.PromptTokensDetails)
 	usage := &anthropic.Usage{
-		InputTokens:  float64(resp.Usage.PromptTokens),
-		OutputTokens: float64(resp.Usage.CompletionTokens),
+		// Anthropic input_tokens is the UNCACHED input only, never OpenAI's total prompt_tokens.
+		InputTokens:          float64(input.uncachedInputTokens),
+		CacheReadInputTokens: float64(input.cacheReadInputTokens),
+		OutputTokens:         float64(resp.Usage.CompletionTokens),
 	}
 
 	return &anthropic.MessagesResponse{
@@ -437,6 +440,44 @@ func openAIResponseToAnthropic(resp *openai.ChatCompletionResponse, model string
 		Model:      model,
 		StopReason: stopReason,
 		Usage:      usage,
+	}
+}
+
+// anthropicInputUsage is an OpenAI prompt token count split the way Anthropic reports input.
+//
+// The name "input_tokens" means different things at different layers, so never assume one from another:
+//
+//	OpenAI usage.prompt_tokens                     TOTAL input, cached included
+//	OpenAI usage.prompt_tokens_details.cached_tokens  cached subset of prompt_tokens
+//	Anthropic usage.input_tokens                   UNCACHED input only
+//	Anthropic usage.cache_read_input_tokens        cached input
+//	metrics.TokenUsage InputTokens                 TOTAL input (CachedInputTokens is the cached part)
+//
+// Invariant: uncachedInputTokens + cacheReadInputTokens == prompt_tokens. Anthropic clients and
+// billing compute total input as input_tokens + cache_read_input_tokens (+ cache_creation_input_tokens),
+// so this keeps their total equal to what the backend counted and cached never above it.
+type anthropicInputUsage struct {
+	// uncachedInputTokens is Anthropic usage.input_tokens: prompt_tokens minus the cached part. NOT the total.
+	uncachedInputTokens int
+	// cacheReadInputTokens is Anthropic usage.cache_read_input_tokens: OpenAI cached_tokens, capped at prompt_tokens.
+	cacheReadInputTokens int
+}
+
+// splitOpenAIPromptTokens splits OpenAI's total promptTokens into Anthropic's uncached input_tokens and
+// cache_read_input_tokens. See anthropicInputUsage for why these differ.
+//
+// cached_tokens is a subset of prompt_tokens, so a backend reporting more cached than prompt tokens is
+// wrong; the cached count is capped at promptTokens (and floored at 0) rather than failing the response,
+// so the total never exceeds what the backend counted. With no details, everything is uncached.
+func splitOpenAIPromptTokens(promptTokens int, details *openai.PromptTokensDetails) anthropicInputUsage {
+	promptTokens = max(promptTokens, 0)
+	cached := 0
+	if details != nil {
+		cached = min(max(details.CachedTokens, 0), promptTokens)
+	}
+	return anthropicInputUsage{
+		uncachedInputTokens:  promptTokens - cached,
+		cacheReadInputTokens: cached,
 	}
 }
 
@@ -633,9 +674,15 @@ type sseMessageDeltaBody struct {
 	StopSequence any    `json:"stop_sequence"`
 }
 
+// sseOutputUsage is the usage carried by the converter's closing message_delta.
+// Field meanings follow Anthropic, not OpenAI: see anthropicInputUsage.
 type sseOutputUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	// InputTokens is Anthropic input_tokens: UNCACHED input only, not OpenAI's total prompt_tokens.
+	InputTokens int `json:"input_tokens"`
+	// CacheReadInputTokens is cached input. Omitted when 0, so a stream without a cache report is
+	// unchanged; Anthropic clients and billing read a missing field as 0.
+	CacheReadInputTokens int `json:"cache_read_input_tokens,omitempty"`
+	OutputTokens         int `json:"output_tokens"`
 }
 
 type sseMessageStop struct {
@@ -651,8 +698,8 @@ type openAIStreamToAnthropicState struct {
 	closingEmitted   bool // flag indicating emitted content_block_stop + message_delta + message_stop
 	messageID        string
 	model            string
-	stopReason       string // Anthropic stop_reason, mapped from OpenAI finish_reason
-	inputTokens      int
+	stopReason       string              // Anthropic stop_reason, mapped from OpenAI finish_reason
+	input            anthropicInputUsage // Anthropic-shaped input: uncached and cache-read, never the total
 	outputTokens     int
 	tokenUsage       metrics.TokenUsage
 	blockIndex       int                       // current Anthropic content block index
@@ -741,15 +788,18 @@ func (s *openAIStreamToAnthropicState) handleChunk(chunk *openai.ChatCompletionR
 	// Usage-only chunk (emitted when stream_options.include_usage=true)
 	// One of the two ways to indicate stream end (other is endOfStream)
 	if len(chunk.Choices) == 0 && chunk.Usage != nil {
-		s.inputTokens = chunk.Usage.PromptTokens
+		// OpenAI's cached_tokens is a breakdown within prompt_tokens, while Anthropic's cache fields are
+		// additive to input_tokens. Splitting (rather than forwarding prompt_tokens as input_tokens
+		// beside the cached count) is what prevents double-counting.
+		s.input = splitOpenAIPromptTokens(chunk.Usage.PromptTokens, chunk.Usage.PromptTokensDetails)
 		s.outputTokens = chunk.Usage.CompletionTokens
-		// OpenAI's cached_tokens/cache_write_tokens are a breakdown within
-		// prompt_tokens, not additive like Anthropic's native cache fields, so we don't
-		// forward them here to avoid double-counting.
+		// The metrics helper sums uncached + cache read, so TokenUsage.InputTokens is the total prompt_tokens.
+		// cache_write_tokens is not forwarded: it is already inside prompt_tokens and Anthropic-shaped
+		// cache creation would add it on top.
 		s.tokenUsage = metrics.ExtractTokenUsageFromExplicitCaching(
-			int64(s.inputTokens),
+			int64(s.input.uncachedInputTokens),
 			int64(s.outputTokens),
-			ptr.To(int64(0)),
+			ptr.To(int64(s.input.cacheReadInputTokens)),
 			ptr.To(int64(0)),
 		)
 		return s.emitClosingEvents(out)
@@ -1072,8 +1122,9 @@ func (s *openAIStreamToAnthropicState) emitClosingEvents(out *[]byte) error {
 		Type:  "message_delta",
 		Delta: sseMessageDeltaBody{StopReason: stopReason, StopSequence: nil},
 		Usage: sseOutputUsage{
-			InputTokens:  s.inputTokens,
-			OutputTokens: s.outputTokens,
+			InputTokens:          s.input.uncachedInputTokens,
+			CacheReadInputTokens: s.input.cacheReadInputTokens,
+			OutputTokens:         s.outputTokens,
 		},
 	}
 	data, err := json.Marshal(msgDeltaPayload)
