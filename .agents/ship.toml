@@ -6,14 +6,16 @@
 # CI runs `make check` (precommit_check.yaml) and `make test-coverage`
 # (build_and_test.yaml, with -race). `make check` is `make precommit` followed
 # by a clean-tree check, which fails on any uncommitted change, so the gate uses
-# `make precommit` itself: the gate runs before implement commits. Left out:
+# `make precommit` itself: the gate runs before implement commits. ENVOY_VERSION
+# is CI's pin (build_and_test.yaml): `make test-coverage` launches Envoy through
+# func-e, which otherwise uses whatever version this machine resolves. Left out:
 # CI's -race flag, and the test-crdcel, test-controller, test-data-plane* and
 # test-e2e* jobs, which need envtest, a local Envoy or a kind cluster.
 #
 # This gate rewrites files: precommit runs tidy, codegen, apidoc and the
 # formatters. Stage only rewritten files inside the plan's scope and revert the
 # rest, per the implement node.
-check = "make precommit && make test-coverage"
+check = "make precommit && ENVOY_VERSION=1.39.6 make test-coverage"
 
 # Runs ai-gateway's live-cluster suite (scripts/test-k8s-integ.sh) on the
 # ai-services-atlas stack, with this checkout's chart and images as its Envoy

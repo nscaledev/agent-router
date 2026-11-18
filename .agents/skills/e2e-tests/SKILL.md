@@ -82,7 +82,7 @@ did not swap fails at bootstrap instead of passing against the pins. The script'
 `using existing Envoy AI Gateway installation (aigateway-system:ai-gateway-controller)` line, and
 the sidecar images `integ` records, show which build ran.
 
-`aigw_restore` puts the controller back, and runs from `run.sh`'s EXIT trap. When the diff changes
+`aigw_cleanup` puts the controller back, and runs from `run.sh`'s EXIT trap. When the diff changes
 the CRDs (`manifests/charts/ai-gateway-crds-helm`, `api/`), the swap also applies this checkout's
 CRDs, which cannot be put back. The trap then deletes the cluster (`atlas down`), so the next run
 starts from the pins.
@@ -100,11 +100,13 @@ this run holds the cluster's e2e lock:
 
 - **The controller's pinned spec** is saved per cluster before the swap, at
   `~/.cache/atlas/agent-router-e2e-<cluster>.json`.
-- **`aigw_restore`** applies it from the EXIT trap, before the lease is released, and then deletes
+- **`aigw_cleanup`** applies it from the EXIT trap, before the lease is released, and then deletes
   the file.
 - **A run killed before its trap ran** leaves the swap and the file behind. The next
-  `swap_in_this_build` on that cluster restores from the file before it swaps, so the pinned spec
-  is never lost or overwritten.
+  `swap_in_this_build` on that cluster restores from the file before it swaps. It never saves a
+  spec while a restore is pending, so the pinned spec is never lost or overwritten.
+- **CRDs applied by a killed run** are recorded in `~/.cache/atlas/agent-router-e2e-<cluster>.crds`.
+  The next swap on that cluster refuses with `infra` until someone runs `atlas down`.
 
 The suite's namespace and release and the image tag derive from the sha, so a replay never meets
 another run's resources.
@@ -128,7 +130,7 @@ Paste the helpers into `run.sh` after sourcing the library. List every library c
 
 ```sh
 e2e_preflight "ship e2e agent-router#<pr>"
-trap 'aigw_restore; e2e_cleanup' EXIT # restore the pinned controller before the lease is released
+trap 'aigw_cleanup; e2e_cleanup' EXIT # restore the pinned controller before the lease is released
 ```
 
 ```sh
@@ -140,7 +142,9 @@ AIGW_NS=aigateway-system                    # where the base layer installs Envo
 # The suite's namespace and release. ai-gateway's script treats the agw-e2e- prefix as its own when
 # it cleans up after a failure; "ar" keeps it apart from ai-gateway's own runs of the same sha.
 AGW="agw-e2e-ar-${E2E_SHA:0:7}"
+# Kept per cluster, outside the run's own directory, so a killed run's swap is found by the next.
 aigw_saved() { echo "${XDG_CACHE_HOME:-$HOME/.cache}/atlas/agent-router-e2e-$CLUSTER.json"; }
+aigw_crds() { echo "${XDG_CACHE_HOME:-$HOME/.cache}/atlas/agent-router-e2e-$CLUSTER.crds"; } # holds the run's $RUN_DIR
 
 # Builds this checkout's controller and ext_proc images for the node's architecture and loads them
 # into the atlas's kind node. A pull or Docker fault is $INFRA; a compile or build error is the diff's.
@@ -173,25 +177,31 @@ aigw_patch() { # deployment.json image [extproc_image]
       else . end))}]' "$1"
 }
 
-# Puts the base layer's controller back from the saved spec. From the EXIT trap, and before a swap
-# when a killed run left one behind. Deletes the cluster when this run applied its own CRDs.
+# Puts the base layer's controller back from the saved spec, and deletes the spec only once that
+# rolled out. Non-zero when a saved spec could not be applied; the spec is then kept.
 aigw_restore() {
   local saved
-  [[ -n $CLUSTER ]] || return 0
   saved="$(aigw_saved)"
-  if [[ -s $saved ]]; then
-    if $KUBECTL -n "$AIGW_NS" patch deploy ai-gateway-controller --type=json \
-      -p "$(aigw_patch "$saved" "$(jq -r '.spec.template.spec.containers[0].image' "$saved")")" >/dev/null &&
-      $KUBECTL -n "$AIGW_NS" rollout status deploy/ai-gateway-controller --timeout=300s >/dev/null; then
-      rm -f "$saved"
-      echo "restored $AIGW_NS/ai-gateway-controller to the pins"
-    else
-      echo "could not restore $AIGW_NS/ai-gateway-controller; the spec to restore is kept at $saved" >&2
-    fi
+  [[ -s $saved ]] || return 0
+  if $KUBECTL -n "$AIGW_NS" patch deploy ai-gateway-controller --type=json \
+    -p "$(aigw_patch "$saved" "$(jq -r '.spec.template.spec.containers[0].image' "$saved")")" >/dev/null &&
+    $KUBECTL -n "$AIGW_NS" rollout status deploy/ai-gateway-controller --timeout=300s >/dev/null; then
+    rm -f "$saved"
+    echo "restored $AIGW_NS/ai-gateway-controller to the pins"
+    return 0
   fi
-  if [[ -f $RUN_DIR/aigw-crds-applied ]]; then
+  echo "could not restore $AIGW_NS/ai-gateway-controller; the spec to restore is kept at $saved" >&2
+  return 1
+}
+
+# The EXIT trap's part: the controller back to the pins, and the cluster deleted when this run
+# applied its own CRDs, which cannot be put back.
+aigw_cleanup() {
+  [[ -n $CLUSTER ]] || return 0
+  aigw_restore || true
+  if [[ $(cat "$(aigw_crds)" 2>/dev/null) == "$RUN_DIR" ]]; then
     echo "this run applied this checkout's CRDs, which cannot be put back: deleting cluster $CLUSTER"
-    atlas down || true
+    atlas down && rm -f "$(aigw_crds)"
   fi
 }
 
@@ -201,14 +211,19 @@ case_swap_in_this_build() {
   saved="$(aigw_saved)"
   $KUBECTL -n "$AIGW_NS" get deploy ai-gateway-controller >/dev/null 2>&1 ||
     { echo "no Envoy AI Gateway controller in $AIGW_NS: the base layer is not up"; return "$INFRA"; }
-  [[ -s $saved ]] && aigw_restore # a killed run's swap, or this case's first attempt: start from the pins
+  # A killed run's swap, or this case's first attempt: back to the pins first. Never save a spec
+  # while a restore is pending, or the swapped one would replace the pinned one.
+  aigw_restore || { echo "a saved pinned spec could not be restored; fix it or run atlas down"; return "$INFRA"; }
+  # A killed run's CRDs are still on the cluster, and only deleting it removes them.
+  [[ ! -s $(aigw_crds) || $(cat "$(aigw_crds)") == "$RUN_DIR" ]] ||
+    { echo "a killed run left its own CRDs on cluster $CLUSTER; run atlas down"; return "$INFRA"; }
   $KUBECTL -n "$AIGW_NS" get deploy ai-gateway-controller -o json >"$saved.tmp" && mv "$saved.tmp" "$saved" || return "$INFRA"
   [[ $(jq -r '.spec.template.spec.containers[0].image' "$saved") != "$IMG"-* ]] ||
     { rm -f "$saved"; echo "the controller already runs an agent-router e2e image and no pinned spec is saved; run atlas down"; return "$INFRA"; }
   jq -e '.spec.template.spec.containers[0].args | any(startswith("--extProcImage="))' "$saved" >/dev/null ||
     { echo "the controller has no --extProcImage argument; it is not the chart this skill knows"; return "$INFRA"; }
   if ! git diff --quiet "${E2E_BASE_SHA:-origin/main}" "$E2E_SHA" -- manifests/charts/ai-gateway-crds-helm api; then
-    touch "$RUN_DIR/aigw-crds-applied"
+    echo "$RUN_DIR" >"$(aigw_crds)"
     helm template aigw-crds manifests/charts/ai-gateway-crds-helm | $KUBECTL apply --server-side --force-conflicts -f - || return 1
   fi
   $KUBECTL -n "$AIGW_NS" patch deploy ai-gateway-controller --type=json \
@@ -223,8 +238,9 @@ case_swap_in_this_build() {
 # runs, a watcher records the image of every ai-gateway-extproc sidecar injected into the suite's
 # Envoy pods to $RUN_DIR/integ-<label>.extproc. $INFRA only for a fault named in the environment:
 # a missing tool, Docker or buildx down, the private base unreadable, the atlas kubeconfig missing,
-# or one of the script's markers (a bootstrap failure, or a registry rate limit). Anything else is
-# the diff's.
+# ai-gateway's own image build failing, or one of the script's markers (a bootstrap failure, or a
+# registry rate limit) other than its rejection of the swapped controller. Anything else is the
+# diff's.
 integ() { # label recipe [args...]
   local label=$1 c status watcher log="$RUN_DIR/integ-$1.log" seen="$RUN_DIR/integ-$1.extproc"
   shift
@@ -237,21 +253,27 @@ integ() { # label recipe [args...]
     { echo "cannot read the Chainguard base; log Docker in to registry.nscale.com"; return "$INFRA"; }
   echo "ai-gateway $(git -C "$AI_GATEWAY_DIR" rev-parse --short HEAD), Envoy AI Gateway $TAG"
   : >"$seen"
+  # Detached from the case's output, which run_case captures, so it never holds that pipe open.
   while sleep 10; do
     $KUBECTL get pods -A -l "gateway.envoyproxy.io/owning-gateway-namespace=$AGW" -o json 2>/dev/null |
       jq -r '.items[].spec | ((.initContainers // []) + .containers)[] | select(.name == "ai-gateway-extproc") | .image' >>"$seen"
-  done &
+  done </dev/null >/dev/null 2>&1 &
   watcher=$!
+  # `&& status=0 || status=$?`: under run.sh's set -e a bare failing command would leave the case
+  # here, before the watcher is stopped and the failure classified.
   (cd "$AI_GATEWAY_DIR" && KIND_CLUSTER_NAME="$CLUSTER" STALE_TEST_WEBHOOK_NAMESPACE_REGEX='^(ai-gateway-auth-matrix|agwm|agw-mx|agw-e2e-)' \
     AI_GATEWAY_INSTALL_MODE=existing AI_GATEWAY_VERSION="$TAG" \
-    just "$@" "$KUBECONFIG_PATH" "$AGW" "$AGW") >"$log" 2>&1
-  status=$?
-  kill "$watcher" 2>/dev/null
+    just "$@" "$KUBECONFIG_PATH" "$AGW" "$AGW") >"$log" 2>&1 && status=0 || status=$?
+  kill "$watcher" 2>/dev/null || true
   sort -u -o "$seen" "$seen"
   cat "$log"
   echo "ext_proc images injected into the suite's Envoy pods: $(paste -sd, "$seen")"
   ((status == 0)) && return 0
-  grep -qE 'test-k8s-integ: (environment bootstrap failed|registry rate limit hit)' "$log" && return "$INFRA"
+  # The script rejecting the swapped controller (not ready, webhook not ready, a CRD not serving
+  # v1beta1) prints the bootstrap marker too, but the swap rolled out, so it is this build's.
+  grep -qF 'AI_GATEWAY_INSTALL_MODE=existing requires' "$log" && return 1
+  # ai-gateway's own images are the neighbour's; this checkout's were built in build_this_checkout.
+  grep -qE 'test-k8s-integ: (environment bootstrap failed|registry rate limit hit)|gateway image build failed' "$log" && return "$INFRA"
   return 1
 }
 
@@ -335,8 +357,9 @@ As the atlas skill says, with these lines for agent-router:
 - **`infra`:**
   - a missing tool, Docker down, or a base image that cannot be pulled;
   - the Chainguard base unreadable, or the atlas kubeconfig missing;
+  - ai-gateway's own images failing to build (`gateway image build failed`);
   - the script printing `test-k8s-integ: environment bootstrap failed` or
-    `test-k8s-integ: registry rate limit hit`.
+    `test-k8s-integ: registry rate limit hit`, except as below.
 
   `case_build_this_checkout` and `integ` return `$INFRA` for each.
 - **`real`:**
@@ -349,8 +372,9 @@ As the atlas skill says, with these lines for agent-router:
   also covers whether the controller and its webhook are ready, so when the log shows that check
   failing after a successful swap (`AI_GATEWAY_INSTALL_MODE=existing requires ...`), rule it
   `real`, not `infra`.
-- **ai-gateway's own chart failing** to build or install, when the diff does not change what it
-  consumes, is `infra`. Say so in `detail`.
+- **ai-gateway's own chart failing to install** reads as `real`, since `integ` cannot tell it
+  from this build breaking it. It usually waits on Envoy pods carrying this build's sidecar. When
+  the log shows a failure this diff cannot cause, say so in `detail`.
 
 ## Diagnostic snapshot on failure
 
