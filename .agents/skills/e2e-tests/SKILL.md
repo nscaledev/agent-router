@@ -21,21 +21,21 @@ Otherwise it is a copy under `~/.cache/atlas`, cloned on first use and moved to 
 run that starts while no other e2e run holds a lock.
 
 ```sh
-for repo in ai-services-atlas ai-gateway; do
-  var=ATLAS_DIR; [[ $repo == ai-gateway ]] && var=AI_GATEWAY_DIR
-  [[ -n ${!var:-} ]] && continue
-  dir="$HOME/.cache/atlas/$repo"
+e2e_checkout() { # repo; prints the copy's path, cloning or moving it to main first
+  dir="$HOME/.cache/atlas/$1"
   if [ ! -d "$dir/.git" ]; then
-    gh repo clone "nscaledev/$repo" "$dir" -- --quiet ||
-      echo "e2e: could not clone nscaledev/$repo; run gh auth login" >&2
+    gh repo clone "nscaledev/$1" "$dir" -- --quiet ||
+      echo "e2e: could not clone nscaledev/$1; run gh auth login" >&2
   # Moved to main only while no e2e run holds a lock, so a running suite never sees it change.
   elif ! find "${XDG_CACHE_HOME:-$HOME/.cache}/atlas" -maxdepth 1 -name 'e2e-*.lock' 2>/dev/null | grep -q .; then
     { git -C "$dir" -c credential.helper= -c credential.helper='!gh auth git-credential' fetch --quiet origin main &&
       git -C "$dir" checkout --quiet --detach FETCH_HEAD; } ||
       echo "e2e: $dir not updated; using it as it is" >&2
   fi
-  printf -v "$var" '%s' "$dir"
-done
+  echo "$dir"
+}
+: "${ATLAS_DIR:=$(e2e_checkout ai-services-atlas)}"
+: "${AI_GATEWAY_DIR:=$(e2e_checkout ai-gateway)}"
 export ATLAS_DIR AI_GATEWAY_DIR
 ```
 
@@ -110,6 +110,7 @@ Paste the helpers into `run.sh` after sourcing the library. List every library c
 
 ```sh
 LIBRARY_CASES="up build_this_checkout gateway_contract gateway_contract_nscale"
+: "${AI_GATEWAY_DIR:=$HOME/.cache/atlas/ai-gateway}"
 TAG="e2e-${E2E_SHA:0:7}"
 IMG="localhost/agent-router-e2e/ai-gateway" # make names the images $IMG-controller:$TAG and $IMG-extproc:$TAG
 # The suite's namespace and release. ai-gateway's script treats the agw-e2e- prefix as its own when
