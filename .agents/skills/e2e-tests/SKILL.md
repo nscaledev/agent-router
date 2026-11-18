@@ -223,6 +223,8 @@ case_swap_in_this_build() {
   # cluster removes them: delete it, so the next run starts from the pins. A marker for an earlier
   # incarnation is stale, since the cluster was recreated since.
   if [[ -s $(aigw_crds) ]] && [[ $(cut -d' ' -f1 "$(aigw_crds)") != "$RUN_DIR" ]]; then
+    # Fail closed: without the node's creation time a recreated cluster cannot be told apart.
+    [[ -n $(aigw_node) ]] || { echo "cannot read the creation time of node $CLUSTER-control-plane"; return "$INFRA"; }
     if [[ $(cut -d' ' -f2- "$(aigw_crds)") == "$(aigw_node)" ]]; then
       echo "a killed run left its own CRDs on cluster $CLUSTER: deleting it; the next run starts from the pins"
       atlas down && rm -f "$(aigw_crds)"
