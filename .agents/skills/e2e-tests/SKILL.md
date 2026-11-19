@@ -66,7 +66,10 @@ the pins only.
 E2E_NEEDS="envir-base-layer"
 ```
 
-The base layer installs Envoy AI Gateway (pinned `v1.2.0`) as `aigateway-system/ai-gateway-controller`.
+The base layer installs Envoy AI Gateway as `aigateway-system/ai-gateway-controller`, at the
+version envir-base-layer pins (the `ai-gateway-helm` dependency in its
+`deploy/helm/envir-base-layer/Chart.yaml`). Nothing here names that version: the swap reads the
+pinned controller from the cluster, prints its image, and restores exactly that spec.
 Its webhook injects the ext_proc sidecar into every Envoy pod carrying
 `ai.nscale.com/product: ai-gateway`. So ai-gateway's script cannot install a second controller
 beside it: it refuses, with a bootstrap failure. Instead, `swap_in_this_build` changes that
@@ -245,6 +248,7 @@ case_swap_in_this_build() {
     -p "$(aigw_patch "$saved" "$IMG-controller:$TAG" "$IMG-extproc:$TAG")" || return 1
   # This build's controller failing to roll out is the diff's.
   $KUBECTL -n "$AIGW_NS" rollout status deploy/ai-gateway-controller --timeout=300s || return 1
+  echo "pinned: $(jq -r '.spec.template.spec.containers[0].image' "$saved")"
   echo "swapped $IMG-controller:$TAG and $IMG-extproc:$TAG into $AIGW_NS/ai-gateway-controller"
 }
 
@@ -411,9 +415,9 @@ the file.
 
 ## Not proven here
 
-- **Only the images are this checkout's.** The controller's Deployment, webhook and RBAC are the
-  base layer's pinned chart (`v1.2.0`). Neither this checkout's chart nor the fork release Nscale
-  deploys from Harbor is exercised.
+- **Only the images are this checkout's.** The controller's Deployment, webhook and RBAC come
+  from the chart version the base layer pins, which `swap_in_this_build` prints as `pinned:`.
+  Neither this checkout's chart nor the fork release Nscale deploys from Harbor is exercised.
 - **The backend is ai-gateway's mock.** Its usage figures are canned, and real engine output
   (vLLM, SGLang) is not exercised.
 
