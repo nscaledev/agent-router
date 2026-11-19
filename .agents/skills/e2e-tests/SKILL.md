@@ -24,13 +24,13 @@ run that starts while no other e2e run holds a lock.
 e2e_checkout() { # repo; prints the copy's path, cloning or moving it to main first
   dir="$HOME/.cache/atlas/$1"
   if [ ! -d "$dir/.git" ]; then
-    gh repo clone "nscaledev/$1" "$dir" -- --quiet ||
-      echo "e2e: could not clone nscaledev/$1; run gh auth login" >&2
+    gh repo clone "nscaledev/$1" "$dir" -- --quiet \
+      || echo "e2e: could not clone nscaledev/$1; run gh auth login" >&2
   # Moved to main only while no e2e run holds a lock, so a running suite never sees it change.
-  elif ! find "${XDG_CACHE_HOME:-$HOME/.cache}/atlas" -maxdepth 1 -name 'e2e-*.lock' 2>/dev/null | grep -q .; then
-    { git -C "$dir" -c credential.helper= -c credential.helper='!gh auth git-credential' fetch --quiet origin main &&
-      git -C "$dir" checkout --quiet --detach FETCH_HEAD; } ||
-      echo "e2e: $dir not updated; using it as it is" >&2
+  elif ! find "${XDG_CACHE_HOME:-$HOME/.cache}/atlas" -maxdepth 1 -name 'e2e-*.lock' 2> /dev/null | grep -q .; then
+    { git -C "$dir" -c credential.helper= -c credential.helper='!gh auth git-credential' fetch --quiet origin main \
+      && git -C "$dir" checkout --quiet --detach FETCH_HEAD; } \
+      || echo "e2e: $dir not updated; using it as it is" >&2
   fi
   echo "$dir"
 }
@@ -151,19 +151,26 @@ AGW="agw-e2e-ar-${E2E_SHA:0:7}"
 aigw_saved() { echo "${XDG_CACHE_HOME:-$HOME/.cache}/atlas/agent-router-e2e-$CLUSTER.json"; }
 # Holds "<run dir> <node created>": which run applied its own CRDs, to which incarnation of the cluster.
 aigw_crds() { echo "${XDG_CACHE_HOME:-$HOME/.cache}/atlas/agent-router-e2e-$CLUSTER.crds"; }
-aigw_node() { docker inspect -f '{{.Created}}' "$CLUSTER-control-plane" 2>/dev/null; }
+aigw_node() { docker inspect -f '{{.Created}}' "$CLUSTER-control-plane" 2> /dev/null; }
 
 # Builds this checkout's controller and ext_proc images for the node's architecture and loads them
 # into the atlas's kind node. A pull or Docker fault is $INFRA; a compile or build error is the diff's.
 case_build_this_checkout() {
   local arch cmd out
-  arch="$(docker info --format '{{.Architecture}}')" || { echo "Docker is not running"; return "$INFRA"; }
-  case $arch in aarch64 | arm64) arch=arm64 ;; x86_64 | amd64) arch=amd64 ;; *) echo "unsupported node architecture $arch"; return "$INFRA" ;; esac
+  arch="$(docker info --format '{{.Architecture}}')" || {
+    echo "Docker is not running"
+    return "$INFRA"
+  }
+  case $arch in aarch64 | arm64) arch=arm64 ;; x86_64 | amd64) arch=amd64 ;; *)
+    echo "unsupported node architecture $arch"
+    return "$INFRA"
+    ;;
+  esac
   for cmd in controller extproc; do
     out="$(make "docker-build.$cmd" GOARCH_LIST="$arch" OCI_REPOSITORY_PREFIX="$IMG" TAG="$TAG" \
       DOCKER_BUILD_ARGS="--load --platform linux/$arch" 2>&1)" || {
       echo "$out" | tail -40
-      grep -qE 'failed to resolve source metadata|pull access denied|toomanyrequests|Cannot connect to the Docker daemon|no space left on device' <<<"$out" && return "$INFRA"
+      grep -qE 'failed to resolve source metadata|pull access denied|toomanyrequests|Cannot connect to the Docker daemon|no space left on device' <<< "$out" && return "$INFRA"
       return 1
     }
     kind load docker-image "$IMG-$cmd:$TAG" --name "$CLUSTER" || return "$INFRA"
@@ -191,8 +198,8 @@ aigw_restore() {
   saved="$(aigw_saved)"
   [[ -s $saved ]] || return 0
   if $KUBECTL -n "$AIGW_NS" patch deploy ai-gateway-controller --type=json \
-    -p "$(aigw_patch "$saved" "$(jq -r '.spec.template.spec.containers[0].image' "$saved")")" >/dev/null &&
-    $KUBECTL -n "$AIGW_NS" rollout status deploy/ai-gateway-controller --timeout=300s >/dev/null; then
+    -p "$(aigw_patch "$saved" "$(jq -r '.spec.template.spec.containers[0].image' "$saved")")" > /dev/null \
+    && $KUBECTL -n "$AIGW_NS" rollout status deploy/ai-gateway-controller --timeout=300s > /dev/null; then
     rm -f "$saved"
     echo "restored $AIGW_NS/ai-gateway-controller to the pins"
     return 0
@@ -206,7 +213,7 @@ aigw_restore() {
 aigw_cleanup() {
   [[ -n $CLUSTER ]] || return 0
   aigw_restore || true
-  if [[ $(cut -d' ' -f1 "$(aigw_crds)" 2>/dev/null) == "$RUN_DIR" ]]; then
+  if [[ $(cut -d' ' -f1 "$(aigw_crds)" 2> /dev/null) == "$RUN_DIR" ]]; then
     echo "this run applied this checkout's CRDs, which cannot be put back: deleting cluster $CLUSTER"
     atlas down && rm -f "$(aigw_crds)" || echo "could not delete cluster $CLUSTER; the next swap there deletes it" >&2
   fi
@@ -217,17 +224,26 @@ aigw_cleanup() {
 case_swap_in_this_build() {
   local saved
   saved="$(aigw_saved)"
-  $KUBECTL -n "$AIGW_NS" get deploy ai-gateway-controller >/dev/null 2>&1 ||
-    { echo "no Envoy AI Gateway controller in $AIGW_NS: the base layer is not up"; return "$INFRA"; }
+  $KUBECTL -n "$AIGW_NS" get deploy ai-gateway-controller > /dev/null 2>&1 \
+    || {
+      echo "no Envoy AI Gateway controller in $AIGW_NS: the base layer is not up"
+      return "$INFRA"
+    }
   # A killed run's swap, or this case's first attempt: back to the pins first. Never save a spec
   # while a restore is pending, or the swapped one would replace the pinned one.
-  aigw_restore || { echo "a saved pinned spec could not be restored; fix it or run atlas down"; return "$INFRA"; }
+  aigw_restore || {
+    echo "a saved pinned spec could not be restored; fix it or run atlas down"
+    return "$INFRA"
+  }
   # Another run's CRDs, on this incarnation of the cluster, are still there, and only deleting the
   # cluster removes them: delete it, so the next run starts from the pins. A marker for an earlier
   # incarnation is stale, since the cluster was recreated since.
   if [[ -s $(aigw_crds) ]] && [[ $(cut -d' ' -f1 "$(aigw_crds)") != "$RUN_DIR" ]]; then
     # Fail closed: without the node's creation time a recreated cluster cannot be told apart.
-    [[ -n $(aigw_node) ]] || { echo "cannot read the creation time of node $CLUSTER-control-plane"; return "$INFRA"; }
+    [[ -n $(aigw_node) ]] || {
+      echo "cannot read the creation time of node $CLUSTER-control-plane"
+      return "$INFRA"
+    }
     if [[ $(cut -d' ' -f2- "$(aigw_crds)") == "$(aigw_node)" ]]; then
       echo "a killed run left its own CRDs on cluster $CLUSTER: deleting it; the next run starts from the pins"
       atlas down && rm -f "$(aigw_crds)"
@@ -235,13 +251,20 @@ case_swap_in_this_build() {
     fi
     rm -f "$(aigw_crds)"
   fi
-  $KUBECTL -n "$AIGW_NS" get deploy ai-gateway-controller -o json >"$saved.tmp" && mv "$saved.tmp" "$saved" || return "$INFRA"
-  [[ $(jq -r '.spec.template.spec.containers[0].image' "$saved") != "$IMG"-* ]] ||
-    { rm -f "$saved"; echo "the controller already runs an agent-router e2e image and no pinned spec is saved; run atlas down"; return "$INFRA"; }
-  jq -e '.spec.template.spec.containers[0].args | any(startswith("--extProcImage="))' "$saved" >/dev/null ||
-    { echo "the controller has no --extProcImage argument; it is not the chart this skill knows"; return "$INFRA"; }
+  $KUBECTL -n "$AIGW_NS" get deploy ai-gateway-controller -o json > "$saved.tmp" && mv "$saved.tmp" "$saved" || return "$INFRA"
+  [[ $(jq -r '.spec.template.spec.containers[0].image' "$saved") != "$IMG"-* ]] \
+    || {
+      rm -f "$saved"
+      echo "the controller already runs an agent-router e2e image and no pinned spec is saved; run atlas down"
+      return "$INFRA"
+    }
+  jq -e '.spec.template.spec.containers[0].args | any(startswith("--extProcImage="))' "$saved" > /dev/null \
+    || {
+      echo "the controller has no --extProcImage argument; it is not the chart this skill knows"
+      return "$INFRA"
+    }
   if ! git diff --quiet "${E2E_BASE_SHA:-origin/main}" "$E2E_SHA" -- manifests/charts/ai-gateway-crds-helm api; then
-    echo "$RUN_DIR $(aigw_node)" >"$(aigw_crds)"
+    echo "$RUN_DIR $(aigw_node)" > "$(aigw_crds)"
     helm template aigw-crds manifests/charts/ai-gateway-crds-helm | $KUBECTL apply --server-side --force-conflicts -f - || return 1
   fi
   $KUBECTL -n "$AIGW_NS" patch deploy ai-gateway-controller --type=json \
@@ -264,26 +287,38 @@ integ() { # label recipe [args...]
   local label=$1 c status watcher log="$RUN_DIR/integ-$1.log" seen="$RUN_DIR/integ-$1.extproc"
   shift
   for c in just docker kind go helm kubectl curl jq yq; do
-    command -v "$c" >/dev/null || { echo "missing required command: $c"; return "$INFRA"; }
+    command -v "$c" > /dev/null || {
+      echo "missing required command: $c"
+      return "$INFRA"
+    }
   done
-  docker buildx version >/dev/null 2>&1 || { echo "missing docker buildx plugin"; return "$INFRA"; }
-  [[ -f $KUBECONFIG_PATH ]] || { echo "atlas kubeconfig missing: $KUBECONFIG_PATH"; return "$INFRA"; }
-  docker buildx imagetools inspect "$(awk '/^FROM /{print $2; exit}' "$AI_GATEWAY_DIR/deploy/processor/Dockerfile")" >/dev/null ||
-    { echo "cannot read the Chainguard base; log Docker in to registry.nscale.com"; return "$INFRA"; }
+  docker buildx version > /dev/null 2>&1 || {
+    echo "missing docker buildx plugin"
+    return "$INFRA"
+  }
+  [[ -f $KUBECONFIG_PATH ]] || {
+    echo "atlas kubeconfig missing: $KUBECONFIG_PATH"
+    return "$INFRA"
+  }
+  docker buildx imagetools inspect "$(awk '/^FROM /{print $2; exit}' "$AI_GATEWAY_DIR/deploy/processor/Dockerfile")" > /dev/null \
+    || {
+      echo "cannot read the Chainguard base; log Docker in to registry.nscale.com"
+      return "$INFRA"
+    }
   echo "ai-gateway $(git -C "$AI_GATEWAY_DIR" rev-parse --short HEAD), Envoy AI Gateway $TAG"
-  : >"$seen"
+  : > "$seen"
   # Detached from the case's output, which run_case captures, so it never holds that pipe open.
   while sleep 10; do
-    $KUBECTL get pods -A -l "gateway.envoyproxy.io/owning-gateway-namespace=$AGW" -o json 2>/dev/null |
-      jq -r '.items[].spec | ((.initContainers // []) + .containers)[] | select(.name == "ai-gateway-extproc") | .image' >>"$seen"
-  done </dev/null >/dev/null 2>&1 &
+    $KUBECTL get pods -A -l "gateway.envoyproxy.io/owning-gateway-namespace=$AGW" -o json 2> /dev/null \
+      | jq -r '.items[].spec | ((.initContainers // []) + .containers)[] | select(.name == "ai-gateway-extproc") | .image' >> "$seen"
+  done < /dev/null > /dev/null 2>&1 &
   watcher=$!
   # `&& status=0 || status=$?`: under run.sh's set -e a bare failing command would leave the case
   # here, before the watcher is stopped and the failure classified.
   (cd "$AI_GATEWAY_DIR" && KIND_CLUSTER_NAME="$CLUSTER" STALE_TEST_WEBHOOK_NAMESPACE_REGEX='^(ai-gateway-auth-matrix|agwm|agw-mx|agw-e2e-)' \
     AI_GATEWAY_INSTALL_MODE=existing AI_GATEWAY_VERSION="$TAG" \
-    just "$@" "$KUBECONFIG_PATH" "$AGW" "$AGW") >"$log" 2>&1 && status=0 || status=$?
-  kill "$watcher" 2>/dev/null || true
+    just "$@" "$KUBECONFIG_PATH" "$AGW" "$AGW") > "$log" 2>&1 && status=0 || status=$?
+  kill "$watcher" 2> /dev/null || true
   sort -u -o "$seen" "$seen"
   cat "$log"
   echo "ext_proc images injected into the suite's Envoy pods: $(paste -sd, "$seen")"
@@ -298,9 +333,15 @@ integ() { # label recipe [args...]
 
 # The suite's sidecars must all be this build's: a run on any other ext_proc proves nothing here.
 injected_this_build() { # label
-  [[ -s $RUN_DIR/integ-$1.extproc ]] || { echo "no ai-gateway-extproc sidecar was observed"; return 1; }
-  [[ $(cat "$RUN_DIR/integ-$1.extproc") == "$IMG-extproc:$TAG" ]] ||
-    { echo "unexpected ext_proc images: $(paste -sd, "$RUN_DIR/integ-$1.extproc")"; return 1; }
+  [[ -s $RUN_DIR/integ-$1.extproc ]] || {
+    echo "no ai-gateway-extproc sidecar was observed"
+    return 1
+  }
+  [[ $(cat "$RUN_DIR/integ-$1.extproc") == "$IMG-extproc:$TAG" ]] \
+    || {
+      echo "unexpected ext_proc images: $(paste -sd, "$RUN_DIR/integ-$1.extproc")"
+      return 1
+    }
 }
 
 case_gateway_contract() { integ default test-k8s-integ && injected_this_build default; }
@@ -315,11 +356,11 @@ as the whole suite. The groups are listed in the script's usage text
 (`$AI_GATEWAY_DIR/scripts/test-k8s-integ.sh --help`). The billing and Anthropic checks run in
 `core` under `GATEWAY_AUTH_MODE=nscale`.
 
-| case | what it proves | how |
-|---|---|---|
-| `build_this_checkout` | the controller and ext_proc images build from this checkout and load into the node | `run_case build_this_checkout "..."` |
-| `swap_in_this_build` | this checkout's controller rolls out in place of the pinned one, with this build's ext_proc as the sidecar it injects | `run_case swap_in_this_build "..."` |
-| `gateway_contract` | ai-gateway's full OpenAI-compatible surface through this build's controller and injected ext_proc, with the sidecar image checked | `integ default test-k8s-integ` |
+| case                      | what it proves                                                                                                                                                                                             | how                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `build_this_checkout`     | the controller and ext_proc images build from this checkout and load into the node                                                                                                                         | `run_case build_this_checkout "..."`                   |
+| `swap_in_this_build`      | this checkout's controller rolls out in place of the pinned one, with this build's ext_proc as the sidecar it injects                                                                                      | `run_case swap_in_this_build "..."`                    |
+| `gateway_contract`        | ai-gateway's full OpenAI-compatible surface through this build's controller and injected ext_proc, with the sidecar image checked                                                                          | `integ default test-k8s-integ`                         |
 | `gateway_contract_nscale` | the above, plus ext_auth, billing publication over NATS, and `POST /anthropic/v1/messages` converted to chat completions and back, streaming and not, with the mock reporting 4 cached of 10 prompt tokens | `GATEWAY_AUTH_MODE=nscale integ nscale test-k8s-integ` |
 
 The endpoint contract checker is `$AI_GATEWAY_DIR/tests/k8sinteg/cmd/check`. Read it before
@@ -340,8 +381,8 @@ asserts on what `integ` printed for the criterion's route.
 # converter's usage itself, so it must expect the same split before this case can pass.
 case_anthropic_cached_usage() {
   GATEWAY_AUTH_MODE=nscale K8S_INTEG_GROUP=core integ anthropic test-k8s-integ && injected_this_build anthropic || return
-  grep -F 'POST /anthropic/v1/messages (billing publication, stream=false) =>' "$RUN_DIR/integ-anthropic.log" |
-    grep -qF '"cache_read_input_tokens":4,"input_tokens":6'
+  grep -F 'POST /anthropic/v1/messages (billing publication, stream=false) =>' "$RUN_DIR/integ-anthropic.log" \
+    | grep -qF '"cache_read_input_tokens":4,"input_tokens":6'
 }
 ```
 
@@ -381,6 +422,7 @@ As the atlas skill says, with these lines for agent-router:
     `test-k8s-integ: registry rate limit hit`, except as below.
 
   `case_build_this_checkout` and `integ` return `$INFRA` for each.
+
 - **`real`:**
   - this checkout's images failing to compile or build;
   - this build's controller failing to roll out in the swap;
@@ -391,6 +433,7 @@ As the atlas skill says, with these lines for agent-router:
   also covers whether the controller and its webhook are ready, so when the log shows that check
   failing after a successful swap (`AI_GATEWAY_INSTALL_MODE=existing requires ...`), rule it
   `real`, not `infra`.
+
 - **ai-gateway's own chart failing to install** reads as `real`, since `integ` cannot tell it
   from this build breaking it. It usually waits on Envoy pods carrying this build's sidecar. When
   the log shows a failure this diff cannot cause, say so in `detail`.
