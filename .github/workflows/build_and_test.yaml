@@ -37,8 +37,6 @@ jobs:
             code:
               - '!**/*.md'
               - '!docs/**'
-              - '!site/**'
-              - '!netlify.toml'
           predicate-quantifier: every # Make the filters be AND-ed
           token: "" # don't use github api
     outputs:

@@ -16,17 +16,6 @@ updates:
         patterns:
           - "*"
 
-  - package-ecosystem: npm
-    directory: site
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 14
-    groups:
-      node:
-        patterns:
-          - "*"
-
   - package-ecosystem: gomod
     directories:
       - "/"

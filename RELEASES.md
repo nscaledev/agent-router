@@ -76,18 +76,7 @@ Each non-patch release should start with Release Candidate (RC) phase as follows
    The main branch should only accept the bug fixes, the security fixes, and documentation changes.
    The release candidate should always be cut from the main branch.
 
-2. Prepare the docs site with the new version:
-
-   ```
-   cd site
-   npm run docusaurus docs:version 0.50
-   ```
-
-   This will create the new folder for the release, `versioned_docs/release-0.50`. You'll have to update the `_vars.json` and `compatibility.md` and
-   make sure all the versions are correct.
-   You also need to udpate the version list in `docusaurus.config.ts` and point the `latestVersion` to the versino being released.
-
-3. Cut the request candidate tag from the main branch. The tag should be v0.50.0-rc1. Assuming the remote `origin` is the main envoyproxy/ai-gateway repository,
+2. Cut the release candidate tag from the main branch. The tag should be v0.50.0-rc1. Assuming the remote `origin` is the main envoyproxy/ai-gateway repository,
    the command to cut the tag is:
 
    ```
@@ -99,12 +88,12 @@ Each non-patch release should start with Release Candidate (RC) phase as follows
    Pushing a tag will trigger the pipeline to build the release candidate image and the helm chart tagged with the release candidate tag.
    The release candidate image will be available in the Docker Hub.
 
-4. Generate the release notes using the Claude Code `/release-notes` command (defined in `.claude/commands/release-notes`).
+3. Generate the release notes using the Claude Code `/release-notes` command (defined in `.claude/commands/release-notes`).
    This command analyzes commits since the last release, verifies features against the actual code, and generates
-   the release notes JSON data file, MDX page, plain-markdown copy, and navigation updates for the docs site.
+   a Markdown release note in `release-notes/`.
    Review the generated output and make any necessary adjustments.
 
-5. The release candidate should be tested by the maintainers and the community. If there is any issue, the issue should be fixed in the main branch
+4. The release candidate should be tested by the maintainers and the community. If there is any issue, the issue should be fixed in the main branch
    and the new rc tag should be created. For example, if there is an issue in the release candidate v0.50.0-rc1, replace `v0.50.0-rc1` with `v0.50.0-rc2`
    in the above command and repeat the process.
 
@@ -140,6 +129,4 @@ Each non-patch release should start with Release Candidate (RC) phase as follows
    The patch release image will be available in the Docker Hub.
 4. The draft release note will be created in the GitHub repository after the pipeline is completed.
    Edit the release note nicely by hand to reflect the changes in the release.
-5. Update the documentation on the main branch to reflect the new version. This has the following items:
-   - Change `v0.50.0` to `v0.50.1` in site/versioned_docs/version-0.50 directory.
-   - Update the site/src/pages/release-notes.md to add the new release note.
+5. Add the patch release note to `release-notes/` on the main branch.

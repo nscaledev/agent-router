@@ -115,12 +115,12 @@ apidoc: ## Generate API documentation for the API defined in the api directory.
 	@echo "apidoc => generating API reference for all versions..."
 	@$(GO_TOOL) crd-ref-docs \
 		--source-path=api \
-		--config=site/crd-ref-docs/config-core.yaml \
-		--templates-dir=site/crd-ref-docs/templates \
+		--config=tools/crd-ref-docs/config-core.yaml \
+		--templates-dir=tools/crd-ref-docs/templates \
 		--max-depth 20 \
-		--output-path site/docs/api/api.mdx \
+		--output-path docs/api.md \
 		--renderer=markdown
-	@echo "apidoc => API documentation generated at site/docs/api/api.mdx"
+	@echo "apidoc => API documentation generated at docs/api.md"
 
 # This generates typed client, listers, and informers for the API.
 .PHONY: codegen

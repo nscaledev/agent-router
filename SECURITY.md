@@ -100,7 +100,7 @@ To minimize security risks when running Envoy AI Gateway:
   (or an external secret manager) rather than in plaintext configuration.
 - Restrict network access to the control plane and management interfaces.
 - Regularly review the security-related documentation under the project
-  [docs](./site/docs/capabilities/security).
+  [docs](https://theagentrouter.ai/docs/capabilities/security/).
 
 ## Contact
 

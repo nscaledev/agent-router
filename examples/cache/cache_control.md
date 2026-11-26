@@ -27,19 +27,19 @@ Choose your preferred provider and ensure you have:
 ### For Direct Anthropic
 
 - Anthropic API key
-- Envoy AI Gateway configured for Anthropic (see [Anthropic setup guide](../../site/docs/getting-started/connect-providers/anthropic.md))
+- Envoy AI Gateway configured for Anthropic (see [Anthropic setup guide](https://theagentrouter.ai/docs/getting-started/connect-providers/anthropic/))
 
 ### For GCP Vertex AI
 
 - GCP credentials with Vertex AI access
 - Enabled Claude models in your GCP project
-- Envoy AI Gateway configured for GCP Vertex AI (see [GCP Vertex AI setup guide](../../site/docs/getting-started/connect-providers/gcp-vertexai.md))
+- Envoy AI Gateway configured for GCP Vertex AI (see [GCP Vertex AI setup guide](https://theagentrouter.ai/docs/getting-started/connect-providers/gcp-vertexai/))
 
 ### For AWS Bedrock
 
 - AWS credentials with Bedrock access
 - Enabled Claude models in AWS Bedrock
-- Envoy AI Gateway configured for AWS Bedrock (see [AWS Bedrock setup guide](../../site/docs/getting-started/connect-providers/aws-bedrock.md))
+- Envoy AI Gateway configured for AWS Bedrock (see [AWS Bedrock setup guide](https://theagentrouter.ai/docs/getting-started/connect-providers/aws-bedrock/))
 
 ## Provider-Specific Considerations
 

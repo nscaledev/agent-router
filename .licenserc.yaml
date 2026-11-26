@@ -16,7 +16,8 @@ header:
     - .git
     - .claude
     - .cursor
-    - site
+    - docs/images
+    - tools/crd-ref-docs/templates
     - out
     - ".github"
     - ".bin"

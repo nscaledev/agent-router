@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://theagentrouter.ai">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="site/static/img/brand/ar-horizontal-on-dark.svg">
-      <img alt="Agent Router" src="site/static/img/brand/ar-horizontal-primary.svg" width="420">
+      <source media="(prefers-color-scheme: dark)" srcset="docs/images/brand/ar-horizontal-on-dark.svg">
+      <img alt="Agent Router" src="docs/images/brand/ar-horizontal-primary.svg" width="420">
     </picture>
   </a>
 </p>
@@ -55,7 +55,7 @@ When using Agent Router, we refer to a two-tier gateway pattern. **The Tier One 
 - The **Tier One Gateway** handles authentication, top-level routing, and global rate limiting.
 - The **Tier Two Gateway** provides fine-grained control over self-hosted model access, with endpoint picker support for LLM inference optimization.
 
-![](site/blog/images/aigw-ref.drawio.png)
+![](docs/images/aigw-ref.drawio.png)
 
 ## Supported AI Providers
 
@@ -65,99 +65,99 @@ Agent Router supports a wide range of AI providers, making it easy to integrate 
   <table>
     <tr>
       <td align="center" width="120">
-        <img src="site/static/img/providers/openai.svg" width="60" height="60" alt="OpenAI"/>
+        <img src="docs/images/providers/openai.svg" width="60" height="60" alt="OpenAI"/>
         <br><sub><b>OpenAI</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/azure-openai.svg" width="60" height="60" alt="Azure OpenAI"/>
+        <img src="docs/images/providers/azure-openai.svg" width="60" height="60" alt="Azure OpenAI"/>
         <br><sub><b>Azure OpenAI</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/google-gemini.svg" width="60" height="60" alt="Google Gemini"/>
+        <img src="docs/images/providers/google-gemini.svg" width="60" height="60" alt="Google Gemini"/>
         <br><sub><b>Google Gemini</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/vertex-ai.svg" width="60" height="60" alt="Vertex AI"/>
+        <img src="docs/images/providers/vertex-ai.svg" width="60" height="60" alt="Vertex AI"/>
         <br><sub><b>Vertex AI</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/aws-bedrock.svg" width="60" height="60" alt="AWS Bedrock"/>
+        <img src="docs/images/providers/aws-bedrock.svg" width="60" height="60" alt="AWS Bedrock"/>
         <br><sub><b>AWS Bedrock</b></sub>
       </td>
     </tr>
     <tr>
       <td align="center" width="120">
-        <img src="site/static/img/providers/mistral.svg" width="60" height="60" alt="Mistral"/>
+        <img src="docs/images/providers/mistral.svg" width="60" height="60" alt="Mistral"/>
         <br><sub><b>Mistral</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/cohere.svg" width="60" height="60" alt="Cohere"/>
+        <img src="docs/images/providers/cohere.svg" width="60" height="60" alt="Cohere"/>
         <br><sub><b>Cohere</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/groq.svg" width="60" height="60" alt="Groq"/>
+        <img src="docs/images/providers/groq.svg" width="60" height="60" alt="Groq"/>
         <br><sub><b>Groq</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/together-ai.svg" width="60" height="60" alt="Together AI"/>
+        <img src="docs/images/providers/together-ai.svg" width="60" height="60" alt="Together AI"/>
         <br><sub><b>Together AI</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/deepinfra.svg" width="60" height="60" alt="DeepInfra"/>
+        <img src="docs/images/providers/deepinfra.svg" width="60" height="60" alt="DeepInfra"/>
         <br><sub><b>DeepInfra</b></sub>
       </td>
     </tr>
     <tr>
       <td align="center" width="120">
-        <img src="site/static/img/providers/deepseek.svg" width="60" height="60" alt="DeepSeek"/>
+        <img src="docs/images/providers/deepseek.svg" width="60" height="60" alt="DeepSeek"/>
         <br><sub><b>DeepSeek</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/hunyuan.svg" width="60" height="60" alt="Hunyuan"/>
+        <img src="docs/images/providers/hunyuan.svg" width="60" height="60" alt="Hunyuan"/>
         <br><sub><b>Hunyuan</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/sambanova.svg" width="60" height="60" alt="SambaNova"/>
+        <img src="docs/images/providers/sambanova.svg" width="60" height="60" alt="SambaNova"/>
         <br><sub><b>SambaNova</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/grok.svg" width="60" height="60" alt="Grok"/>
+        <img src="docs/images/providers/grok.svg" width="60" height="60" alt="Grok"/>
         <br><sub><b>Grok</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/tars.svg" width="60" height="60" alt="Tetrate Agent Router Service"/>
+        <img src="docs/images/providers/tars.svg" width="60" height="60" alt="Tetrate Agent Router Service"/>
         <br><sub><b>Tetrate Agent Router Service</b></sub>
       </td>
     </tr>
     <tr>
       <td align="center" width="120">
-        <img src="site/static/img/providers/anthropic.svg" width="60" height="60" alt="Anthropic"/>
+        <img src="docs/images/providers/anthropic.svg" width="60" height="60" alt="Anthropic"/>
         <br><sub><b>Anthropic</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/bitdeer.svg" width="60" height="60" alt="BitDeer"/>
+        <img src="docs/images/providers/bitdeer.svg" width="60" height="60" alt="BitDeer"/>
         <br><sub><b>BitDeer</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/eden-ai.svg" width="60" height="60" alt="Eden AI"/>
+        <img src="docs/images/providers/eden-ai.svg" width="60" height="60" alt="Eden AI"/>
         <br><sub><b>Eden AI</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/lanseq.svg" width="60" height="60" alt="Lanseq"/>
+        <img src="docs/images/providers/lanseq.svg" width="60" height="60" alt="Lanseq"/>
         <br><sub><b>Lanseq</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/tencent-lke.svg" width="60" height="60" alt="Tencent LLM Knowledge Engine"/>
+        <img src="docs/images/providers/tencent-lke.svg" width="60" height="60" alt="Tencent LLM Knowledge Engine"/>
         <br><sub><b>Tencent LLM Knowledge Engine</b></sub>
       </td>
     </tr>
     <tr>
       <td align="center" width="120">
-        <img src="site/static/img/providers/typesafe-ai.svg" width="60" height="60" alt="TypeSafe AI"/>
+        <img src="docs/images/providers/typesafe-ai.svg" width="60" height="60" alt="TypeSafe AI"/>
         <br><sub><b>TypeSafe AI</b></sub>
       </td>
       <td align="center" width="120">
-        <img src="site/static/img/providers/paxa-labs.svg" width="60" height="60" alt="Paxa Labs"/>
+        <img src="docs/images/providers/paxa-labs.svg" width="60" height="60" alt="Paxa Labs"/>
         <br><sub><b>Paxa Labs</b></sub>
       </td>
     </tr>
@@ -170,6 +170,7 @@ Agent Router supports a wide range of AI providers, making it easy to integrate 
 - [Quickstart](https://theagentrouter.ai/docs/getting-started/) to use Agent Router in a few simple steps.
 - [CLI guide](https://theagentrouter.ai/docs/cli/) to run Agent Router standalone with `aigw run`.
 - [Concepts](https://theagentrouter.ai/docs/concepts/) to understand the architecture and resources of Agent Router.
+- [API reference](docs/api.md) for the Kubernetes resources in this checkout.
 - [Blog](https://theagentrouter.ai/blog) for announcements, features, and reference architectures.
 - [Talks and Presentations](https://theagentrouter.ai/talks) about Agent Router.
 

@@ -1,6 +1,0 @@
-.section {
-  background: var(--ar-cream);
-  padding: 104px 0;
-  text-align: center;
-}
-:global([data-theme='dark']) .section { background: var(--ar-ink-800); }

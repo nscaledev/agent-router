@@ -5,3 +5,4 @@ tests/internal/testopeninference/spans
 cmd/aigw/testdata
 internal/autoconfig/testdata
 examples/aigw/ollama.yaml
+/docs/api.md

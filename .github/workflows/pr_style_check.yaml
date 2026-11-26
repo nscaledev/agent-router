@@ -83,7 +83,6 @@ jobs:
             tracing
             examples
             blog
-            site
             backport
             cli
             refactor

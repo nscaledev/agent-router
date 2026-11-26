@@ -35,6 +35,8 @@ You can make `make precommit` a git pre-commit hook by moving this file.
 cp pre-commit.sh .git/hooks/pre-commit
 ```
 
+Run `make apidoc` after editing a public Kubernetes API type or its comments. Commit the regenerated [API reference](docs/api.md) along with the source change.
+
 All test targets are prefixed with `test-*` and can be run via `make test-<target>`.
 
 Some test commands might require additional dependencies to be installed on your machine.

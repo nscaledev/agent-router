@@ -16,7 +16,7 @@ type: application
 # to follow the convention of container images vs v0.0.0-latest for the chart version.
 version: v0.0.0-latest
 appVersion: "latest"
-icon: https://raw.githubusercontent.com/envoyproxy/ai-gateway/refs/heads/main/site/static/img/logo.svg
+icon: https://theagentrouter.ai/img/brand/ar-mark-marquee.svg
 
 maintainers:
   - name: envoy-ai-gateway-maintainers
