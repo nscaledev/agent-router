@@ -7,6 +7,7 @@ package translator
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -1055,4 +1056,160 @@ func TestAnthropicToOpenAITranslator_ResponseBody_StreamStateNilGuard(t *testing
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "stream state not initialized")
+}
+
+// cachedPromptTokensCases are OpenAI backend usage objects and the Anthropic usage they must convert to.
+//
+// "input_tokens" means different things on each side: OpenAI prompt_tokens is the TOTAL input, Anthropic
+// input_tokens is the UNCACHED input only, and the converter's metrics.TokenUsage InputTokens is the TOTAL
+// again. Every case keeps Anthropic input_tokens + cache_read_input_tokens == prompt_tokens.
+var cachedPromptTokensCases = []struct {
+	name string
+	// usage is raw JSON so absent, empty and null details can all be expressed.
+	usage                    string
+	promptTokens             uint32 // OpenAI prompt_tokens: the total input the backend counted.
+	wantUncachedInputTokens  int    // Anthropic input_tokens.
+	wantCacheReadInputTokens int    // Anthropic cache_read_input_tokens.
+	// wantNonStreamingCachedMetric is whether the non-streaming path records a cached count in its metrics;
+	// it records one only when the backend reported prompt_tokens_details, as before this change.
+	wantNonStreamingCachedMetric bool
+}{
+	{
+		name:                         "cached tokens split out of the total",
+		usage:                        `{"prompt_tokens":10,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":4}}`,
+		promptTokens:                 10,
+		wantUncachedInputTokens:      6,
+		wantCacheReadInputTokens:     4,
+		wantNonStreamingCachedMetric: true,
+	},
+	{
+		name:                     "no prompt_tokens_details: everything uncached, unchanged from before",
+		usage:                    `{"prompt_tokens":10,"completion_tokens":3}`,
+		promptTokens:             10,
+		wantUncachedInputTokens:  10,
+		wantCacheReadInputTokens: 0,
+	},
+	{
+		name:                     "null prompt_tokens_details: everything uncached",
+		usage:                    `{"prompt_tokens":10,"completion_tokens":3,"prompt_tokens_details":null}`,
+		promptTokens:             10,
+		wantUncachedInputTokens:  10,
+		wantCacheReadInputTokens: 0,
+	},
+	{
+		name:                         "cached_tokens absent: everything uncached",
+		usage:                        `{"prompt_tokens":10,"completion_tokens":3,"prompt_tokens_details":{}}`,
+		promptTokens:                 10,
+		wantUncachedInputTokens:      10,
+		wantCacheReadInputTokens:     0,
+		wantNonStreamingCachedMetric: true,
+	},
+	{
+		name:                         "cached_tokens null: everything uncached",
+		usage:                        `{"prompt_tokens":10,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":null}}`,
+		promptTokens:                 10,
+		wantUncachedInputTokens:      10,
+		wantCacheReadInputTokens:     0,
+		wantNonStreamingCachedMetric: true,
+	},
+	{
+		name:                         "cached_tokens equal to prompt_tokens: no uncached input",
+		usage:                        `{"prompt_tokens":10,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":10}}`,
+		promptTokens:                 10,
+		wantUncachedInputTokens:      0,
+		wantCacheReadInputTokens:     10,
+		wantNonStreamingCachedMetric: true,
+	},
+	{
+		name:                         "cached_tokens above prompt_tokens: capped at prompt_tokens, total never exceeds it",
+		usage:                        `{"prompt_tokens":10,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":14}}`,
+		promptTokens:                 10,
+		wantUncachedInputTokens:      0,
+		wantCacheReadInputTokens:     10,
+		wantNonStreamingCachedMetric: true,
+	},
+	{
+		name:                         "negative cached_tokens: read as 0",
+		usage:                        `{"prompt_tokens":10,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":-3}}`,
+		promptTokens:                 10,
+		wantUncachedInputTokens:      10,
+		wantCacheReadInputTokens:     0,
+		wantNonStreamingCachedMetric: true,
+	},
+}
+
+func TestAnthropicToOpenAITranslator_ResponseBody_NonStreaming_CachedPromptTokens(t *testing.T) {
+	for _, tc := range cachedPromptTokensCases {
+		t.Run(tc.name, func(t *testing.T) {
+			translator := NewAnthropicToChatCompletionOpenAITranslator("v1", "")
+			_, _, err := translator.RequestBody(nil, &anthropic.MessagesRequest{
+				Model:     "claude-test",
+				MaxTokens: 100,
+				Messages:  []anthropic.MessageParam{{Role: anthropic.MessageRoleUser, Content: anthropic.MessageContent{Text: "Hi"}}},
+			}, false)
+			require.NoError(t, err)
+
+			backendResp := `{"id":"chatcmpl-1","model":"gpt-4o","choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":` + tc.usage + `}`
+			_, body, tokenUsage, _, err := translator.ResponseBody(nil, strings.NewReader(backendResp), true, nil)
+			require.NoError(t, err)
+
+			var resp anthropic.MessagesResponse
+			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NotNil(t, resp.Usage)
+			assert.Equal(t, float64(tc.wantUncachedInputTokens), resp.Usage.InputTokens, "Anthropic input_tokens is the uncached input")
+			assert.Equal(t, float64(tc.wantCacheReadInputTokens), resp.Usage.CacheReadInputTokens)
+			assert.Equal(t, float64(0), resp.Usage.CacheCreationInputTokens)
+			assert.Equal(t, float64(3), resp.Usage.OutputTokens)
+			assert.Equal(t, float64(tc.promptTokens), resp.Usage.InputTokens+resp.Usage.CacheReadInputTokens,
+				"input_tokens + cache_read_input_tokens must equal the backend's prompt_tokens")
+
+			totalInput, ok := tokenUsage.InputTokens()
+			require.True(t, ok)
+			assert.Equal(t, tc.promptTokens, totalInput, "metrics InputTokens is the total prompt_tokens, never double-counted")
+			cached, cachedSet := tokenUsage.CachedInputTokens()
+			assert.Equal(t, tc.wantNonStreamingCachedMetric, cachedSet)
+			assert.Equal(t, uint32(tc.wantCacheReadInputTokens), cached) //nolint:gosec
+		})
+	}
+}
+
+func TestAnthropicToOpenAITranslator_ResponseBody_Streaming_CachedPromptTokens(t *testing.T) {
+	for _, tc := range cachedPromptTokensCases {
+		t.Run(tc.name, func(t *testing.T) {
+			translator := NewAnthropicToChatCompletionOpenAITranslator("v1", "")
+			_, _, err := translator.RequestBody(nil, &anthropic.MessagesRequest{
+				Model:     "claude-test",
+				MaxTokens: 100,
+				Stream:    true,
+				Messages:  []anthropic.MessageParam{{Role: anthropic.MessageRoleUser, Content: anthropic.MessageContent{Text: "Hi"}}},
+			}, false)
+			require.NoError(t, err)
+
+			input := "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"}}],\"model\":\"gpt-4o\"}\n\n" +
+				"data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+				"data: {\"id\":\"chatcmpl-1\",\"choices\":[],\"usage\":" + tc.usage + "}\n\n" +
+				"data: [DONE]\n\n"
+			_, body, tokenUsage, _, err := translator.ResponseBody(nil, strings.NewReader(input), true, nil)
+			require.NoError(t, err)
+
+			events := parseSSEEventsFromBytes(body)
+			require.Len(t, events, 6)
+			require.Equal(t, "message_delta", events[4].eventType)
+			// cache_read_input_tokens is omitted when 0, so a stream with no cache report is byte-identical
+			// to before this change.
+			wantUsage := fmt.Sprintf(`{"input_tokens":%d,"output_tokens":3}`, tc.wantUncachedInputTokens)
+			if tc.wantCacheReadInputTokens > 0 {
+				wantUsage = fmt.Sprintf(`{"input_tokens":%d,"cache_read_input_tokens":%d,"output_tokens":3}`,
+					tc.wantUncachedInputTokens, tc.wantCacheReadInputTokens)
+			}
+			require.JSONEq(t, `{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":`+wantUsage+`}`, events[4].data)
+
+			totalInput, ok := tokenUsage.InputTokens()
+			require.True(t, ok)
+			assert.Equal(t, tc.promptTokens, totalInput, "metrics InputTokens is the total prompt_tokens, never double-counted")
+			cached, cachedSet := tokenUsage.CachedInputTokens()
+			assert.True(t, cachedSet)
+			assert.Equal(t, uint32(tc.wantCacheReadInputTokens), cached) //nolint:gosec
+		})
+	}
 }
